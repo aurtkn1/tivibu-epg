@@ -1,11 +1,10 @@
 import re
 import html
-import json
+import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from collections import defaultdict
 from xml.etree.ElementTree import Element, SubElement, ElementTree
-
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 
@@ -15,11 +14,9 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 BASE_URL = "https://www.tivibu.com.tr"
 LIVE_URL = f"{BASE_URL}/canli-tv"
-
 OUTPUT_FILE = "epg.xml"
-DAYS = 7
 
-TURKEY_TZ = ZoneInfo("Europe/Istanbul")
+DAYS = 7
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -27,7 +24,9 @@ USER_AGENT = (
     "Chrome/131.0.0.0 Safari/537.36"
 )
 
-# Tivibu'nun bilinen kategori sayfaları.
+TURKEY_TZ = ZoneInfo("Europe/Istanbul")
+
+
 CATEGORY_URLS = [
     f"{BASE_URL}/canli-tv",
     f"{BASE_URL}/canli-tv/ulusal",
@@ -45,7 +44,7 @@ CATEGORY_URLS = [
 
 
 # ==============================================================
-# YARDIMCI
+# TEMEL YARDIMCILAR
 # ==============================================================
 
 def clean_text(value):
@@ -54,23 +53,13 @@ def clean_text(value):
 
     value = html.unescape(str(value))
     value = value.replace("\xa0", " ")
-    value = value.replace("\r", "\n")
-    value = re.sub(r"[ \t]+", " ", value)
-    value = re.sub(r"\n+", "\n", value)
+    value = re.sub(r"\s+", " ", value)
 
     return value.strip()
 
 
-def one_line(value):
-    return re.sub(
-        r"\s+",
-        " ",
-        html.unescape(str(value or ""))
-    ).strip()
-
-
 def normalize_key(value):
-    value = one_line(value).lower()
+    value = clean_text(value).lower()
 
     replacements = {
         "ı": "i",
@@ -81,8 +70,6 @@ def normalize_key(value):
         "ç": "c",
         "’": "",
         "'": "",
-        "-": "",
-        "_": "",
     }
 
     for old, new in replacements.items():
@@ -96,7 +83,7 @@ def normalize_key(value):
 
 
 def make_xml_id(name):
-    value = one_line(name).lower()
+    value = clean_text(name).lower()
 
     replacements = {
         "ı": "i",
@@ -128,7 +115,7 @@ def make_xml_id(name):
 
 
 def valid_channel(name):
-    name = one_line(name)
+    name = clean_text(name)
 
     if not name:
         return False
@@ -159,8 +146,8 @@ def valid_channel(name):
     return True
 
 
-def valid_program_title(title):
-    title = one_line(title)
+def valid_title(title):
+    title = clean_text(title)
 
     if not title:
         return False
@@ -207,11 +194,7 @@ def xml_datetime(dt):
 
 # ==============================================================
 # PROGRAM SATIRI
-#
-# Örnek:
-#
-# Kanal D Ana Haber Aktüalite - 19:00 → 20:00 Canlı
-# =============================================================
+# ==============================================================
 
 PROGRAM_RE = re.compile(
     r"^(?P<title>.*?)"
@@ -240,21 +223,18 @@ PROGRAM_RE = re.compile(
 
 
 def parse_program_line(text, target_date):
+    text = clean_text(text)
 
-    text = one_line(text)
-
-    match = PROGRAM_RE.match(
-        text
-    )
+    match = PROGRAM_RE.match(text)
 
     if not match:
         return None
 
-    title = one_line(
+    title = clean_text(
         match.group("title")
     )
 
-    if not valid_program_title(title):
+    if not valid_title(title):
         return None
 
     start = make_datetime(
@@ -270,303 +250,279 @@ def parse_program_line(text, target_date):
     )
 
     if end <= start:
-        end += timedelta(
-            days=1
-        )
+        end += timedelta(days=1)
 
     return {
         "title": title,
         "start": start,
-        "end": end
+        "end": end,
     }
 
 
 # ==============================================================
-# TARİH / PROGRAM VERİSİNİ JAVASCRIPT'TEN AL
-#
-# Buradaki amaç:
-# - Tarih butonunun exact yazısını varsaymamak
-# - Program verisini mümkün olan en küçük DOM elemanından almak
-# - Kanal linki ile aynı container içinden kanal adını çözmek
+# KANALLARI BUL
 # ==============================================================
 
-def extract_dom_records(
-    page,
-    target_date,
-    channels
-):
-    allowed = {
-        normalize_key(c["name"]): c["name"]
-        for c in channels.values()
-    }
+def collect_channels(page):
+    channels = {}
 
-    result = page.evaluate(
-        """
-        (allowed, targetText) => {
-
-            const normalize = (value) => {
-                return (value || "")
-                    .replace(/\\s+/g, " ")
-                    .trim()
-                    .toLowerCase()
-                    .normalize("NFD")
-                    .replace(/[\\u0300-\\u036f]/g, "")
-                    .replace(/ı/g, "i")
-                    .replace(/[^a-z0-9]+/g, "");
-            };
-
-            const programPattern =
-                /\\d{1,2}:\\d{2}\\s*→\\s*\\d{1,2}:\\d{2}/;
-
-            const records = [];
-            const seen = new Set();
-
-            // --------------------------------------------------
-            // Önce gerçek kanal linklerini bul.
-            // --------------------------------------------------
-
-            const channelLinks = [
-                ...document.querySelectorAll(
-                    'a[href*="/kanallar/"]'
-                )
-            ];
-
-            const channelMap = new Map();
-
-            for (const link of channelLinks) {
-
-                const rawName =
-                    (link.innerText || "")
-                    .replace(/\\s+/g, " ")
-                    .trim();
-
-                if (!rawName) {
-                    continue;
-                }
-
-                const key =
-                    normalize(rawName);
-
-                if (!allowed[key]) {
-                    continue;
-                }
-
-                const href =
-                    link.getAttribute("href") || "";
-
-                const url =
-                    href.startsWith("/")
-                        ? location.origin + href
-                        : href;
-
-                channelMap.set(
-                    url.split("?")[0].replace(/\\/$/, "").toLowerCase(),
-                    allowed[key]
-                );
-            }
-
-            // --------------------------------------------------
-            // Tüm elementleri tara.
-            // --------------------------------------------------
-
-            const elements = [
-                ...document.querySelectorAll("a"),
-                ...document.querySelectorAll("li"),
-                ...document.querySelectorAll("div"),
-                ...document.querySelectorAll("span")
-            ];
-
-            for (const element of elements) {
-
-                const text =
-                    (element.innerText || "")
-                    .replace(/\\s+/g, " ")
-                    .trim();
-
-                if (!text) {
-                    continue;
-                }
-
-                if (!programPattern.test(text)) {
-                    continue;
-                }
-
-                if (text.length > 400) {
-                    continue;
-                }
-
-                // İçinde program bulunan daha küçük child varsa
-                // parent'ı kullanma.
-                let hasProgramChild = false;
-
-                for (const child of element.children) {
-
-                    const childText =
-                        (child.innerText || "")
-                        .replace(/\\s+/g, " ")
-                        .trim();
-
-                    if (
-                        childText &&
-                        childText.length < text.length &&
-                        programPattern.test(childText)
-                    ) {
-                        hasProgramChild = true;
-                        break;
-                    }
-                }
-
-                if (hasProgramChild) {
-                    continue;
-                }
-
-                // ------------------------------------------------
-                // Önce elementin kendi href'i
-                // ------------------------------------------------
-
-                let foundChannel = null;
-
-                const ownHref =
-                    element.getAttribute("href");
-
-                if (ownHref) {
-
-                    const url =
-                        ownHref.startsWith("/")
-                            ? location.origin + ownHref
-                            : ownHref;
-
-                    const cleanUrl =
-                        url.split("?")[0]
-                           .replace(/\\/$/, "")
-                           .toLowerCase();
-
-                    foundChannel =
-                        channelMap.get(cleanUrl) || null;
-                }
-
-                // ------------------------------------------------
-                // Sonra parent zinciri
-                // ------------------------------------------------
-
-                let node = element;
-
-                for (
-                    let depth = 0;
-                    !foundChannel &&
-                    node &&
-                    depth < 12;
-                    depth++
-                ) {
-
-                    const links = [
-                        ...node.querySelectorAll(
-                            'a[href*="/kanallar/"]'
-                        )
-                    ];
-
-                    const found = [];
-
-                    for (const link of links) {
-
-                        const rawName =
-                            (link.innerText || "")
-                            .replace(/\\s+/g, " ")
-                            .trim();
-
-                        if (!rawName) {
-                            continue;
-                        }
-
-                        const key =
-                            normalize(rawName);
-
-                        if (allowed[key]) {
-
-                            if (
-                                !found.includes(
-                                    allowed[key]
-                                )
-                            ) {
-                                found.push(
-                                    allowed[key]
-                                );
-                            }
-                        }
-                    }
-
-                    if (found.length === 1) {
-                        foundChannel = found[0];
-                        break;
-                    }
-
-                    node = node.parentElement;
-                }
-
-                if (!foundChannel) {
-                    continue;
-                }
-
-                // ------------------------------------------------
-                // Tarih metnini istemiyoruz.
-                // Program satırı zaten saatli.
-                // ------------------------------------------------
-
-                const key =
-                    foundChannel +
-                    "|" +
-                    text;
-
-                if (seen.has(key)) {
-                    continue;
-                }
-
-                seen.add(key);
-
-                records.push({
-                    channel: foundChannel,
-                    text: text
-                });
-            }
-
-            return records;
-        }
-        """,
-        allowed,
-        target_date.strftime("%d.%m.%Y")
+    locator = page.locator(
+        'a[href*="/kanallar/"]'
     )
 
+    count = locator.count()
+
+    for i in range(count):
+
+        try:
+            element = locator.nth(i)
+
+            href = element.get_attribute(
+                "href"
+            )
+
+            name = clean_text(
+                element.inner_text()
+            )
+
+            if not href or not name:
+                continue
+
+            if not valid_channel(name):
+                continue
+
+            if href.startswith("/"):
+                href = BASE_URL + href
+
+            clean_url = (
+                href
+                .split("?", 1)[0]
+                .rstrip("/")
+            )
+
+            if not re.search(
+                r"/kanallar/[^/?#]+$",
+                clean_url
+            ):
+                continue
+
+            key = normalize_key(
+                name
+            )
+
+            if key in channels:
+                continue
+
+            channels[key] = {
+                "name": name,
+                "url": clean_url,
+                "id": make_xml_id(name),
+            }
+
+        except Exception:
+            continue
+
+    return channels
+
+
+def build_channel_url_map(channels):
+    result = {}
+
+    for channel in channels.values():
+
+        result[
+            channel["url"].lower().rstrip("/")
+        ] = channel
+
+    return result
+
+
+# ==============================================================
+# PROGRAM LİNKLERİ
+# ==============================================================
+
+def collect_program_links(page):
+    result = []
+
+    locator = page.locator(
+        'a[href*="/kanallar/"]'
+    )
+
+    count = locator.count()
+
+    for i in range(count):
+
+        try:
+
+            element = locator.nth(i)
+
+            href = element.get_attribute(
+                "href"
+            )
+
+            text = clean_text(
+                element.inner_text()
+            )
+
+            if not href or not text:
+                continue
+
+            if "→" not in text:
+                continue
+
+            if not re.search(
+                r"\d{1,2}:\d{2}\s*→\s*\d{1,2}:\d{2}",
+                text
+            ):
+                continue
+
+            if href.startswith("/"):
+                href = BASE_URL + href
+
+            href = (
+                href
+                .split("?", 1)[0]
+                .rstrip("/")
+                .lower()
+            )
+
+            result.append({
+                "url": href,
+                "text": text,
+            })
+
+        except Exception:
+            continue
+
+    return result
+
+
+def extract_programs(
+    page,
+    target_date,
+    channel_url_map
+):
     programs = []
 
-    for item in result:
+    links = collect_program_links(
+        page
+    )
+
+    seen = set()
+
+    for item in links:
+
+        channel = channel_url_map.get(
+            item["url"]
+        )
+
+        if channel is None:
+            continue
 
         parsed = parse_program_line(
             item["text"],
             target_date
         )
 
-        if not parsed:
+        if parsed is None:
             continue
 
+        key = (
+            channel["name"].upper(),
+            parsed["start"],
+            parsed["title"].upper()
+        )
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+
         programs.append({
-            "channel": item["channel"],
+            "channel": channel["name"],
             "title": parsed["title"],
             "start": parsed["start"],
-            "end": parsed["end"]
+            "end": parsed["end"],
         })
+
+    programs.sort(
+        key=lambda x: (
+            x["start"],
+            x["channel"]
+        )
+    )
 
     return programs
 
 
 # ==============================================================
-# TARİH KONTROLÜ
+# SAYFANIN MEVCUT PROGRAM İMZASI
 # ==============================================================
 
-def current_page_date_state(page):
+def schedule_signature(page):
 
     try:
 
-        state = page.evaluate(
+        values = page.evaluate(
+            """
+            () => {
+
+                const result = [];
+
+                const elements = [
+                    ...document.querySelectorAll("a"),
+                    ...document.querySelectorAll("li"),
+                    ...document.querySelectorAll("div"),
+                    ...document.querySelectorAll("span")
+                ];
+
+                for (const element of elements) {
+
+                    const text =
+                        (element.innerText || "")
+                        .replace(/\\s+/g, " ")
+                        .trim();
+
+                    if (!text) {
+                        continue;
+                    }
+
+                    if (
+                        /\\d{1,2}:\\d{2}\\s*→\\s*\\d{1,2}:\\d{2}/
+                        .test(text)
+                    ) {
+
+                        if (
+                            text.length >= 5 &&
+                            text.length <= 350
+                        ) {
+                            result.push(text);
+                        }
+                    }
+                }
+
+                return result.slice(0, 1200);
+            }
+            """
+        )
+
+        return "|".join(
+            values
+        )
+
+    except Exception:
+        return ""
+
+
+# ==============================================================
+# TARİH SEÇİM MEKANİZMASI
+# ==============================================================
+
+def find_date_candidates(page):
+
+    try:
+
+        return page.evaluate(
             """
             () => {
 
@@ -580,25 +536,56 @@ def current_page_date_state(page):
                         "[role='button']"
                     ),
                     ...document.querySelectorAll(
-                        "select option:checked"
+                        "a"
                     ),
                     ...document.querySelectorAll(
-                        "[aria-selected='true']"
+                        "[data-date]"
+                    ),
+                    ...document.querySelectorAll(
+                        "[data-value]"
+                    ),
+                    ...document.querySelectorAll(
+                        "option"
                     )
                 ];
 
-                for (const element of elements) {
+                for (const el of elements) {
 
                     const text =
-                        (element.innerText ||
-                         element.textContent ||
+                        (el.innerText ||
+                         el.textContent ||
                          "")
                         .replace(/\\s+/g, " ")
                         .trim();
 
-                    if (text) {
-                        result.push(text);
-                    }
+                    const dataDate =
+                        el.getAttribute(
+                            "data-date"
+                        );
+
+                    const dataValue =
+                        el.getAttribute(
+                            "data-value"
+                        );
+
+                    const value =
+                        el.getAttribute(
+                            "value"
+                        );
+
+                    const aria =
+                        el.getAttribute(
+                            "aria-label"
+                        );
+
+                    result.push({
+                        text: text,
+                        dataDate: dataDate || "",
+                        dataValue: dataValue || "",
+                        value: value || "",
+                        aria: aria || "",
+                        tag: el.tagName
+                    });
                 }
 
                 return result;
@@ -606,180 +593,242 @@ def current_page_date_state(page):
             """
         )
 
-        return state
-
     except Exception:
-
         return []
 
 
-# ==============================================================
-# TARİH ELEMENTİNİ BUL
-# ==============================================================
+def click_date(
+    page,
+    target_date
+):
 
-def find_date_target(page, target_date):
-
-    target = target_date.strftime(
+    target_full = target_date.strftime(
         "%d.%m.%Y"
     )
 
-    # ----------------------------------------------------------
-    # Önce tüm DOM attribute'larını kontrol et.
-    # ----------------------------------------------------------
-
-    try:
-
-        candidate = page.evaluate(
-            """
-            target => {
-
-                const elements = [
-                    ...document.querySelectorAll("*")
-                ];
-
-                for (const el of elements) {
-
-                    const attrs = [
-                        "data-date",
-                        "data-day",
-                        "data-value",
-                        "value",
-                        "aria-label"
-                    ];
-
-                    for (const attr of attrs) {
-
-                        const value =
-                            el.getAttribute(attr);
-
-                        if (
-                            value &&
-                            value.includes(target)
-                        ) {
-                            return {
-                                type: "attribute",
-                                attr: attr,
-                                value: value
-                            };
-                        }
-                    }
-
-                    const text =
-                        (el.innerText || "")
-                        .replace(/\\s+/g, " ")
-                        .trim();
-
-                    if (text === target) {
-
-                        return {
-                            type: "text",
-                            value: target
-                        };
-                    }
-                }
-
-                return null;
-            }
-            """,
-            target
-        )
-
-        if candidate:
-            return candidate
-
-    except Exception:
-        pass
-
-    return None
-
-
-# ==============================================================
-# TARİH DEĞİŞTİRME
-#
-# Tarihler sayfada "05.09.2026" olarak görünmese bile
-# data-date/value/aria-label üzerinden arıyoruz.
-#
-# Ayrıca tıklamadan sonra eski program listesiyle karşılaştırma
-# yapıyoruz.
-# ==============================================================
-
-def change_date(page, target_date):
-
-    target = target_date.strftime(
-        "%d.%m.%Y"
+    target_short = target_date.strftime(
+        "%d.%m"
     )
 
-    before = extract_visible_program_text(
+    target_iso = target_date.strftime(
+        "%Y-%m-%d"
+    )
+
+    target_day = target_date.strftime(
+        "%d"
+    )
+
+    target_month = target_date.strftime(
+        "%m"
+    )
+
+    before = schedule_signature(
         page
     )
 
-    candidate = find_date_target(
-        page,
-        target_date
+    candidates = find_date_candidates(
+        page
     )
 
-    if not candidate:
-        return False
-
     # ----------------------------------------------------------
-    # Native JS event
+    # Öncelik: tam tarih eşleşmesi
     # ----------------------------------------------------------
 
-    try:
+    for candidate in candidates:
 
-        clicked = page.evaluate(
-            """
-            target => {
+        fields = [
+            candidate.get("text", ""),
+            candidate.get("dataDate", ""),
+            candidate.get("dataValue", ""),
+            candidate.get("value", ""),
+            candidate.get("aria", ""),
+        ]
 
-                const elements = [
-                    ...document.querySelectorAll("*")
-                ];
+        if any(
+            value in (
+                target_full,
+                target_iso
+            )
+            for value in fields
+            if value
+        ):
 
-                for (const el of elements) {
+            try:
 
-                    const attrs = [
-                        "data-date",
-                        "data-day",
-                        "data-value",
-                        "value",
-                        "aria-label"
+                result = page.evaluate(
+                    """
+                    target => {
+
+                        const elements = [
+                            ...document.querySelectorAll(
+                                "button"
+                            ),
+                            ...document.querySelectorAll(
+                                "[role='button']"
+                            ),
+                            ...document.querySelectorAll(
+                                "a"
+                            ),
+                            ...document.querySelectorAll(
+                                "[data-date]"
+                            ),
+                            ...document.querySelectorAll(
+                                "[data-value]"
+                            ),
+                            ...document.querySelectorAll(
+                                "option"
+                            )
+                        ];
+
+                        for (const el of elements) {
+
+                            const text =
+                                (el.innerText ||
+                                 el.textContent ||
+                                 "")
+                                .replace(/\\s+/g, " ")
+                                .trim();
+
+                            const attrs = [
+                                el.getAttribute(
+                                    "data-date"
+                                ),
+                                el.getAttribute(
+                                    "data-value"
+                                ),
+                                el.getAttribute(
+                                    "value"
+                                ),
+                                el.getAttribute(
+                                    "aria-label"
+                                )
+                            ];
+
+                            if (
+                                text === target ||
+                                attrs.includes(target)
+                            ) {
+
+                                el.scrollIntoView({
+                                    block: "center"
+                                });
+
+                                el.click();
+
+                                return true;
+                            }
+                        }
+
+                        return false;
+                    }
+                    """,
+                    target_full
+                )
+
+                if result:
+                    break
+
+            except Exception:
+                continue
+
+    # ----------------------------------------------------------
+    # Native SELECT
+    # ----------------------------------------------------------
+
+    if not candidates:
+
+        try:
+
+            selects = page.locator(
+                "select"
+            )
+
+            for i in range(
+                selects.count()
+            ):
+
+                select = selects.nth(i)
+
+                option_count = select.locator(
+                    "option"
+                ).count()
+
+                for j in range(
+                    option_count
+                ):
+
+                    option = select.locator(
+                        "option"
+                    ).nth(j)
+
+                    text = clean_text(
+                        option.inner_text()
+                    )
+
+                    value = (
+                        option.get_attribute(
+                            "value"
+                        )
+                        or ""
+                    )
+
+                    if (
+                        target_full in text
+                        or target_iso in text
+                        or target_full == value
+                        or target_iso == value
+                    ):
+
+                        select.select_option(
+                            value=value
+                        )
+
+                        break
+
+        except Exception:
+            pass
+
+    # ----------------------------------------------------------
+    # Eğer görünür tarih sadece gün adı / gün sayısı ise
+    # 04, 05, 06... üzerinden kontrollü deneme.
+    # ----------------------------------------------------------
+
+    if not candidates:
+
+        try:
+
+            result = page.evaluate(
+                """
+                args => {
+
+                    const elements = [
+                        ...document.querySelectorAll(
+                            "button"
+                        ),
+                        ...document.querySelectorAll(
+                            "[role='button']"
+                        ),
+                        ...document.querySelectorAll(
+                            "a"
+                        )
                     ];
 
-                    for (const attr of attrs) {
+                    for (const el of elements) {
 
-                        const value =
-                            el.getAttribute(attr);
+                        const text =
+                            (el.innerText || "")
+                            .replace(/\\s+/g, " ")
+                            .trim();
 
                         if (
-                            value &&
-                            value.includes(target)
+                            text === args.day
+                            ||
+                            text === args.dayNoZero
                         ) {
 
                             el.scrollIntoView({
                                 block: "center"
                             });
-
-                            el.dispatchEvent(
-                                new MouseEvent(
-                                    "mousedown",
-                                    {
-                                        bubbles: true,
-                                        cancelable: true,
-                                        view: window
-                                    }
-                                )
-                            );
-
-                            el.dispatchEvent(
-                                new MouseEvent(
-                                    "mouseup",
-                                    {
-                                        bubbles: true,
-                                        cancelable: true,
-                                        view: window
-                                    }
-                                )
-                            );
 
                             el.click();
 
@@ -787,18 +836,102 @@ def change_date(page, target_date):
                         }
                     }
 
+                    return false;
+                }
+                """,
+                {
+                    "day": target_day,
+                    "dayNoZero": str(
+                        int(target_day)
+                    )
+                }
+            )
+
+        except Exception:
+            result = False
+
+    # ----------------------------------------------------------
+    # Değişikliği bekle
+    # ----------------------------------------------------------
+
+    if result is not False:
+
+        for _ in range(20):
+
+            time.sleep(
+                0.25
+            )
+
+            after = schedule_signature(
+                page
+            )
+
+            if (
+                after
+                and after != before
+            ):
+                return True
+
+    # ----------------------------------------------------------
+    # Son fallback:
+    # page'de datepicker kullanan elementleri tarayıp
+    # custom JS event oluştur.
+    # ----------------------------------------------------------
+
+    try:
+
+        changed = page.evaluate(
+            """
+            args => {
+
+                const all = [
+                    ...document.querySelectorAll("*")
+                ];
+
+                for (const el of all) {
+
                     const text =
                         (el.innerText || "")
                         .replace(/\\s+/g, " ")
                         .trim();
 
-                    if (text === target) {
+                    const attributes = [
+                        el.getAttribute("data-date"),
+                        el.getAttribute("data-day"),
+                        el.getAttribute("data-value"),
+                        el.getAttribute("value"),
+                        el.getAttribute("aria-label")
+                    ];
 
-                        el.scrollIntoView({
-                            block: "center"
-                        });
+                    const found =
+                        attributes.some(
+                            value =>
+                                value &&
+                                (
+                                    value.includes(
+                                        args.full
+                                    )
+                                    ||
+                                    value.includes(
+                                        args.iso
+                                    )
+                                )
+                        )
+                        ||
+                        text === args.full;
 
-                        el.click();
+                    if (found) {
+
+                        el.dispatchEvent(
+                            new MouseEvent(
+                                "click",
+                                {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    view: window
+                                }
+                            )
+                        );
 
                         return true;
                     }
@@ -807,104 +940,44 @@ def change_date(page, target_date):
                 return false;
             }
             """,
-            target
+            {
+                "full": target_full,
+                "iso": target_iso
+            }
         )
 
-        if not clicked:
-            return False
+        if changed:
+
+            for _ in range(20):
+
+                time.sleep(
+                    0.25
+                )
+
+                after = schedule_signature(
+                    page
+                )
+
+                if (
+                    after
+                    and after != before
+                ):
+                    return True
 
     except Exception:
-        return False
-
-    # ----------------------------------------------------------
-    # Yeni programlar gelmesini bekle
-    # ----------------------------------------------------------
-
-    for _ in range(30):
-
-        time.sleep(
-            0.25
-        )
-
-        after = extract_visible_program_text(
-            page
-        )
-
-        if (
-            after
-            and after != before
-        ):
-            return True
+        pass
 
     return False
 
 
 # ==============================================================
-# GÖRÜNÜR PROGRAM TEXT İMZASI
+# SAYFA YENİDEN AÇMA
 # ==============================================================
 
-def extract_visible_program_text(page):
-
-    try:
-
-        result = page.evaluate(
-            """
-            () => {
-
-                const output = [];
-
-                const elements = [
-                    ...document.querySelectorAll("a"),
-                    ...document.querySelectorAll("li"),
-                    ...document.querySelectorAll("div"),
-                    ...document.querySelectorAll("span")
-                ];
-
-                for (const el of elements) {
-
-                    const text =
-                        (el.innerText || "")
-                        .replace(/\\s+/g, " ")
-                        .trim();
-
-                    if (!text) {
-                        continue;
-                    }
-
-                    if (
-                        /\\d{1,2}:\\d{2}\\s*→\\s*\\d{1,2}:\\d{2}/.test(text)
-                    ) {
-
-                        if (
-                            text.length >= 5 &&
-                            text.length <= 400
-                        ) {
-                            output.push(text);
-                        }
-                    }
-                }
-
-                return output.slice(
-                    0,
-                    1000
-                );
-            }
-            """
-        )
-
-        return "|".join(
-            result
-        )
-
-    except Exception:
-        return ""
-
-
-# ==============================================================
-# SAYFAYI YÜKLE
-# ==============================================================
-
-def load_page(page, url):
+def reload_page(
+    page,
+    url
+):
 
     try:
 
@@ -916,23 +989,19 @@ def load_page(page, url):
 
     except PlaywrightTimeoutError:
 
-        print(
-            "  Sayfa yükleme zaman aşımı."
-        )
+        pass
 
-    except Exception as e:
+    except Exception:
 
-        print(
-            f"  Sayfa yükleme hatası: {e}"
-        )
+        pass
 
     page.wait_for_timeout(
-        2000
+        1800
     )
 
 
 # ==============================================================
-# BİR KATEGORİYİ 7 GÜN AL
+# BİR KATEGORİDE 7 GÜN
 # ==============================================================
 
 def scrape_category(
@@ -948,7 +1017,7 @@ def scrape_category(
     )
     print("=" * 70)
 
-    load_page(
+    reload_page(
         page,
         category_url
     )
@@ -959,10 +1028,10 @@ def scrape_category(
         )
     )
 
-    result = []
+    results = []
 
     # ----------------------------------------------------------
-    # Her gün açıkça seçiliyor.
+    # 7 GÜN
     # ----------------------------------------------------------
 
     for day_index in range(
@@ -983,9 +1052,8 @@ def scrape_category(
         )
 
         # ------------------------------------------------------
-        # İlk günde sayfanın mevcut gününü kullan.
-        #
-        # Günün programlarının tarihi bugüne aitse doğrudan al.
+        # İlk gün:
+        # Sayfanın açılış akışını doğrudan al.
         # ------------------------------------------------------
 
         if day_index == 0:
@@ -996,15 +1064,14 @@ def scrape_category(
                 channel_url_map
             )
 
-            # Eğer program yoksa tarih seçmeyi dene.
+            # İlk gün boşsa tarih seçimini dene.
             if not programs:
 
                 print(
-                    "    İlk gün programı bulunamadı, "
-                    "tarih seçimi deneniyor..."
+                    "    İlk gün programı boş."
                 )
 
-                selected = change_date(
+                selected = click_date(
                     page,
                     target_date
                 )
@@ -1017,9 +1084,13 @@ def scrape_category(
                         channel_url_map
                     )
 
+        # ------------------------------------------------------
+        # Sonraki günler
+        # ------------------------------------------------------
+
         else:
 
-            selected = change_date(
+            selected = click_date(
                 page,
                 target_date
             )
@@ -1027,19 +1098,16 @@ def scrape_category(
             if not selected:
 
                 print(
-                    "    Tarih değiştirilemedi."
+                    "    Tarih seçimi başarısız, "
+                    "sayfa yeniden açılıyor."
                 )
 
-                # ------------------------------------------------
-                # Sayfa yenile + tekrar
-                # ------------------------------------------------
-
-                load_page(
+                reload_page(
                     page,
                     category_url
                 )
 
-                selected = change_date(
+                selected = click_date(
                     page,
                     target_date
                 )
@@ -1063,20 +1131,21 @@ def scrape_category(
             f"{len(programs)}"
         )
 
-        result.extend(
+        results.extend(
             programs
         )
 
-    return result
+    return results
 
 
 # ==============================================================
-# PROGRAM BİRLEŞTİR
+# DUPLICATE + END TIME
 # ==============================================================
 
 def finalize_programs(programs):
 
     unique = []
+
     seen = set()
 
     for program in programs:
@@ -1100,13 +1169,7 @@ def finalize_programs(programs):
             program
         )
 
-    # ----------------------------------------------------------
-    # Aynı kanal içinde mantıksız çakışmaları temizle.
-    # ----------------------------------------------------------
-
-    grouped = defaultdict(
-        list
-    )
+    grouped = defaultdict(list)
 
     for program in unique:
 
@@ -1118,86 +1181,64 @@ def finalize_programs(programs):
             program
         )
 
-    final = []
+    result = []
 
-    for channel_key, items in grouped.items():
+    for _, items in grouped.items():
 
         items.sort(
             key=lambda x: x["start"]
         )
 
-        previous_end = None
-
-        for program in items:
+        for i, program in enumerate(items):
 
             start = program["start"]
-            end = program.get("end")
+            end = program.get(
+                "end"
+            )
 
             if end is None:
 
-                end = (
-                    start
-                    + timedelta(
+                if i + 1 < len(items):
+
+                    end = items[
+                        i + 1
+                    ]["start"]
+
+                else:
+
+                    end = start + timedelta(
                         minutes=30
                     )
-                )
 
             if end <= start:
 
-                end = (
-                    start
-                    + timedelta(
-                        minutes=30
-                    )
+                end = start + timedelta(
+                    minutes=30
                 )
-
-            if previous_end is not None:
-
-                # Aynı başlangıçta ikinci kayıt varsa ilkini koru.
-                if (
-                    start ==
-                    final[-1]["start"]
-                    and
-                    program["channel"]
-                    ==
-                    final[-1]["channel"]
-                ):
-                    continue
 
             if end - start > timedelta(
                 hours=12
             ):
 
-                end = (
-                    start
-                    + timedelta(
-                        hours=3
-                    )
+                end = start + timedelta(
+                    hours=3
                 )
 
-            item = {
+            result.append({
                 "channel": program["channel"],
                 "title": program["title"],
                 "start": start,
                 "end": end,
-            }
+            })
 
-            final.append(
-                item
-            )
-
-            previous_end = end
-
-    final.sort(
+    result.sort(
         key=lambda x: (
             x["start"],
-            normalize_key(
-                x["channel"]
-            )
+            x["channel"]
         )
     )
 
-    return final
+    return result
 
 
 # ==============================================================
@@ -1211,9 +1252,9 @@ def write_xml(
 
     used = {
         normalize_key(
-            p["channel"]
+            program["channel"]
         )
-        for p in programs
+        for program in programs
     }
 
     final_channels = []
@@ -1264,7 +1305,7 @@ def write_xml(
             }
         )
 
-        display = SubElement(
+        display_name = SubElement(
             channel_element,
             "display-name",
             {
@@ -1272,13 +1313,13 @@ def write_xml(
             }
         )
 
-        display.text = channel["name"]
+        display_name.text = channel["name"]
 
     channel_ids = {
         normalize_key(
-            c["name"]
-        ): c["id"]
-        for c in final_channels
+            channel["name"]
+        ): channel["id"]
+        for channel in final_channels
     }
 
     # ----------------------------------------------------------
@@ -1319,6 +1360,10 @@ def write_xml(
         )
 
         title.text = program["title"]
+
+    # ----------------------------------------------------------
+    # DOSYAYI YAZ
+    # ----------------------------------------------------------
 
     tree = ElementTree(
         tv
@@ -1362,6 +1407,13 @@ def main():
         microsecond=0
     )
 
+    LAST_DAY = (
+        TODAY
+        + timedelta(
+            days=DAYS - 1
+        )
+    )
+
     print()
     print("=" * 70)
     print("TIVIBU 7 GÜNLÜK EPG")
@@ -1370,18 +1422,13 @@ def main():
     print(
         f"Dönem: "
         f"{TODAY.strftime('%d.%m.%Y')} -> "
-        f"{(
-            TODAY
-            + timedelta(
-                days=DAYS - 1
-            )
-        ).strftime('%d.%m.%Y')}"
+        f"{LAST_DAY.strftime('%d.%m.%Y')}"
     )
 
     print("=" * 70)
 
     # ----------------------------------------------------------
-    # KANALLARI BİR KEZ AL
+    # KANALLARI TEK SEFER AL
     # ----------------------------------------------------------
 
     with sync_playwright() as p:
@@ -1401,7 +1448,7 @@ def main():
             timezone_id="Europe/Istanbul",
             viewport={
                 "width": 1920,
-                "height": 1080,
+                "height": 1080
             }
         )
 
@@ -1415,7 +1462,7 @@ def main():
             "Kanal listesi alınıyor..."
         )
 
-        load_page(
+        reload_page(
             page,
             LIVE_URL
         )
@@ -1433,8 +1480,12 @@ def main():
     )
 
     # ----------------------------------------------------------
-    # SADECE ANA SAYFA + KATEGORİLER
-    # SIRALI
+    # BÜTÜN KATEGORİLER
+    #
+    # SIRALI.
+    #
+    # Paralel yok.
+    # Tarihler karışmıyor.
     # ----------------------------------------------------------
 
     all_programs = []
@@ -1481,12 +1532,49 @@ def main():
             browser.close()
 
     # ----------------------------------------------------------
-    # TEKILLEŞTİR
+    # PROGRAMLARI BİRLEŞTİR
     # ----------------------------------------------------------
 
     all_programs = finalize_programs(
         all_programs
     )
+
+    # ----------------------------------------------------------
+    # GÜN KONTROLÜ
+    # ----------------------------------------------------------
+
+    date_counts = defaultdict(int)
+
+    for program in all_programs:
+
+        date_counts[
+            program["start"].strftime(
+                "%d.%m.%Y"
+            )
+        ] += 1
+
+    print()
+    print("=" * 70)
+    print("GÜN KONTROLÜ")
+    print("=" * 70)
+
+    for day_index in range(
+        DAYS
+    ):
+
+        date = (
+            TODAY
+            + timedelta(
+                days=day_index
+            )
+        ).strftime(
+            "%d.%m.%Y"
+        )
+
+        print(
+            f"{date}: "
+            f"{date_counts.get(date, 0)} program"
+        )
 
     # ----------------------------------------------------------
     # XML
@@ -1498,27 +1586,17 @@ def main():
     )
 
     # ----------------------------------------------------------
-    # ÖZET
+    # KANAL SAYILARI
     # ----------------------------------------------------------
 
-    counts = defaultdict(
-        int
-    )
-
-    dates = defaultdict(
+    channel_counts = defaultdict(
         int
     )
 
     for program in all_programs:
 
-        counts[
+        channel_counts[
             program["channel"]
-        ] += 1
-
-        dates[
-            program["start"].strftime(
-                "%d.%m.%Y"
-            )
         ] += 1
 
     print()
@@ -1538,39 +1616,16 @@ def main():
 
     print()
     print(
-        "GÜN BAZINDA:"
+        "KANAL PROGRAM SAYILARI:"
     )
 
-    for day_index in range(
-        DAYS
-    ):
-
-        date = (
-            TODAY
-            + timedelta(
-                days=day_index
-            )
-        ).strftime(
-            "%d.%m.%Y"
-        )
-
-        print(
-            f"  {date}: "
-            f"{dates.get(date, 0)} program"
-        )
-
-    print()
-    print(
-        "KANAL BAZINDA:"
-    )
-
-    for name in sorted(
-        counts
+    for channel_name in sorted(
+        channel_counts
     ):
 
         print(
-            f"  {name}: "
-            f"{counts[name]}"
+            f"  {channel_name}: "
+            f"{channel_counts[channel_name]}"
         )
 
     print()
