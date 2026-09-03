@@ -1,839 +1,477 @@
 <?xml version='1.0' encoding='utf-8'?>
 <tv generator-info-name="Tivibu 7 Günlük EPG" generator-info-url="https://www.tivibu.com.tr/canli-tv">
-  <channel id="belgesel">
-    <display-name lang="tr">Belgesel</display-name>
+  <channel id="ti_vi_bu_tanitim">
+    <display-name lang="tr">TİVİBU TANITIM</display-name>
   </channel>
-  <channel id="canli_tv">
-    <display-name lang="tr">Canlı TV</display-name>
+  <channel id="tari_h_tv">
+    <display-name lang="tr">TARİH TV</display-name>
   </channel>
-  <channel id="dizi">
-    <display-name lang="tr">Dizi</display-name>
+  <channel id="si_nema_tv">
+    <display-name lang="tr">SİNEMA TV</display-name>
   </channel>
-  <channel id="diger">
-    <display-name lang="tr">Diğer</display-name>
+  <channel id="si_nema_2">
+    <display-name lang="tr">SİNEMA 2</display-name>
   </channel>
-  <channel id="global">
-    <display-name lang="tr">Global</display-name>
+  <channel id="si_nema_yerli">
+    <display-name lang="tr">SİNEMA YERLİ</display-name>
   </channel>
-  <channel id="haber">
-    <display-name lang="tr">Haber</display-name>
+  <channel id="si_nema_yerli_2">
+    <display-name lang="tr">SİNEMA YERLİ 2</display-name>
   </channel>
-  <channel id="muzik">
-    <display-name lang="tr">Müzik</display-name>
+  <channel id="si_nema_aksi_yon">
+    <display-name lang="tr">SİNEMA AKSİYON</display-name>
   </channel>
-  <channel id="sinema">
-    <display-name lang="tr">Sinema</display-name>
+  <channel id="si_nema_aksi_yon_2">
+    <display-name lang="tr">SİNEMA AKSİYON 2</display-name>
   </channel>
-  <channel id="spor">
-    <display-name lang="tr">Spor</display-name>
+  <channel id="si_nema_komedi">
+    <display-name lang="tr">SİNEMA KOMEDİ</display-name>
   </channel>
-  <channel id="ulusal">
-    <display-name lang="tr">Ulusal</display-name>
+  <channel id="si_nema_komedi_2">
+    <display-name lang="tr">SİNEMA KOMEDİ 2</display-name>
   </channel>
-  <channel id="yasam_stil">
-    <display-name lang="tr">Yaşam-Stil</display-name>
+  <channel id="si_nema_ai_le">
+    <display-name lang="tr">SİNEMA AİLE</display-name>
   </channel>
-  <channel id="cocuk">
-    <display-name lang="tr">Çocuk</display-name>
+  <channel id="si_nema_ai_le_2">
+    <display-name lang="tr">SİNEMA AİLE 2</display-name>
   </channel>
-  <programme start="20260903000000 +0300" stop="20260903030000 +0300" channel="sinema">
-    <title lang="tr">Tivibu'nun Renkli Dünyası</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903000000 +0300" stop="20260903014500 +0300" channel="sinema">
-    <title lang="tr">Kim Daha Mutlu</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903003000 +0300" stop="20260903010000 +0300" channel="sinema">
-    <title lang="tr">Arkeo</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903004500 +0300" stop="20260903023000 +0300" channel="sinema">
-    <title lang="tr">Zaman Döngüsü</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903010000 +0300" stop="20260903015500 +0300" channel="sinema">
-    <title lang="tr">Zaman Tüneli</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903011500 +0300" stop="20260903030000 +0300" channel="sinema">
-    <title lang="tr">Acı</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903011500 +0300" stop="20260903030000 +0300" channel="sinema">
-    <title lang="tr">İlgi Manyağı</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903011500 +0300" stop="20260903033000 +0300" channel="sinema">
-    <title lang="tr">Mean Gırls</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903013000 +0300" stop="20260903020700 +0300" channel="sinema">
-    <title lang="tr">Orman Dostları</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903013000 +0300" stop="20260903031500 +0300" channel="sinema">
-    <title lang="tr">One Direction: This Is Us</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903013000 +0300" stop="20260903034500 +0300" channel="sinema">
-    <title lang="tr">Parazit</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903014500 +0300" stop="20260903033000 +0300" channel="sinema">
-    <title lang="tr">Uyanık Gazeteci</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903014500 +0300" stop="20260903033000 +0300" channel="sinema">
-    <title lang="tr">Kim Daha Mutlu</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903014500 +0300" stop="20260903031500 +0300" channel="sinema">
-    <title lang="tr">Ölüm Canlı Yayında!</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903015500 +0300" stop="20260903025000 +0300" channel="sinema">
-    <title lang="tr">Viking Rollo, Sürgünden Fetihlere</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903020000 +0300" stop="20260903034500 +0300" channel="sinema">
-    <title lang="tr">Oyun Ruhu</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903020700 +0300" stop="20260903030000 +0300" channel="sinema">
-    <title lang="tr">Orman Dostları</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903023000 +0300" stop="20260903041500 +0300" channel="sinema">
-    <title lang="tr">Ultravıolet</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903023000 +0300" stop="20260903041500 +0300" channel="sinema">
-    <title lang="tr">Zaman Döngüsü</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903025000 +0300" stop="20260903041500 +0300" channel="sinema">
-    <title lang="tr">Corleone: Mafya ve Kan</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903030000 +0300" stop="20260903060000 +0300" channel="sinema">
-    <title lang="tr">Tivibu'nun Renkli Dünyası</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903030000 +0300" stop="20260903050000 +0300" channel="sinema">
-    <title lang="tr">The Best You Can</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903030000 +0300" stop="20260903044500 +0300" channel="sinema">
-    <title lang="tr">Acı</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903030000 +0300" stop="20260903044500 +0300" channel="sinema">
-    <title lang="tr">Anderssonlar Dağların Kralı</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903031500 +0300" stop="20260903044500 +0300" channel="sinema">
-    <title lang="tr">Los Angeles'ta Aşk</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903031500 +0300" stop="20260903035200 +0300" channel="sinema">
-    <title lang="tr">Orman Dostları</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903033000 +0300" stop="20260903053000 +0300" channel="sinema">
-    <title lang="tr">Aile Çıkmazı</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903033000 +0300" stop="20260903051500 +0300" channel="sinema">
-    <title lang="tr">Uyanık Gazeteci</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903033000 +0300" stop="20260903050000 +0300" channel="sinema">
-    <title lang="tr">Ölüm Canlı Yayında!</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903034500 +0300" stop="20260903061500 +0300" channel="sinema">
-    <title lang="tr">Ye Dua Et Sev</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903034500 +0300" stop="20260903053000 +0300" channel="sinema">
-    <title lang="tr">Oyun Ruhu</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903035200 +0300" stop="20260903044500 +0300" channel="sinema">
-    <title lang="tr">Orman Dostları</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903041500 +0300" stop="20260903050500 +0300" channel="sinema">
-    <title lang="tr">Gerçek Oppenheimer</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903041500 +0300" stop="20260903060000 +0300" channel="sinema">
-    <title lang="tr">Uçuş Planı</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903041500 +0300" stop="20260903060000 +0300" channel="sinema">
-    <title lang="tr">Ultravıolet</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903044500 +0300" stop="20260903064500 +0300" channel="sinema">
-    <title lang="tr">The Best You Can</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903044500 +0300" stop="20260903064500 +0300" channel="sinema">
-    <title lang="tr">Ödül Peşinde</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903044500 +0300" stop="20260903061500 +0300" channel="sinema">
-    <title lang="tr">Tombul Mombul Takımı: Sırt Sırta</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903044500 +0300" stop="20260903063000 +0300" channel="sinema">
-    <title lang="tr">Anderssonlar Dağların Kralı</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903050000 +0300" stop="20260903064500 +0300" channel="sinema">
-    <title lang="tr">Operation Nutcracker</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903050000 +0300" stop="20260903063000 +0300" channel="sinema">
-    <title lang="tr">Los Angeles'ta Aşk</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903050500 +0300" stop="20260903060000 +0300" channel="sinema">
-    <title lang="tr">Hollywood'un Savaşı United Under The Flag</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903051500 +0300" stop="20260903071500 +0300" channel="sinema">
-    <title lang="tr">Aile Çıkmazı</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903053000 +0300" stop="20260903071500 +0300" channel="sinema">
-    <title lang="tr">Abuk Sabuk Bir Film</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903053000 +0300" stop="20260903080000 +0300" channel="sinema">
-    <title lang="tr">Ye Dua Et Sev</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903060000 +0300" stop="20260903090000 +0300" channel="sinema">
-    <title lang="tr">Tivibu'nun Renkli Dünyası</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903060000 +0300" stop="20260903065500 +0300" channel="sinema">
-    <title lang="tr">Viking Rollo, Sürgünden Fetihlere</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903060000 +0300" stop="20260903074500 +0300" channel="sinema">
-    <title lang="tr">Border Hunters</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903060000 +0300" stop="20260903074500 +0300" channel="sinema">
-    <title lang="tr">Uçuş Planı</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903061500 +0300" stop="20260903081500 +0300" channel="sinema">
-    <title lang="tr">Çılgın Kral</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903061500 +0300" stop="20260903080000 +0300" channel="sinema">
-    <title lang="tr">Kutu 314</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903063000 +0300" stop="20260903083000 +0300" channel="sinema">
-    <title lang="tr">Ödül Peşinde</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903063000 +0300" stop="20260903080000 +0300" channel="sinema">
-    <title lang="tr">Tombul Mombul Takımı: Sırt Sırta</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903064500 +0300" stop="20260903084500 +0300" channel="sinema">
-    <title lang="tr">Unutulmayan Aşk</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903064500 +0300" stop="20260903083000 +0300" channel="sinema">
-    <title lang="tr">Operation Nutcracker</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903064500 +0300" stop="20260903083000 +0300" channel="sinema">
-    <title lang="tr">Yılbaşı Eğlencesi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903065500 +0300" stop="20260903082000 +0300" channel="sinema">
-    <title lang="tr">Corleone: Mafya ve Kan</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903071500 +0300" stop="20260903091500 +0300" channel="sinema">
-    <title lang="tr">Nalan</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903071500 +0300" stop="20260903090000 +0300" channel="sinema">
-    <title lang="tr">Abuk Sabuk Bir Film</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903074500 +0300" stop="20260903093000 +0300" channel="sinema">
-    <title lang="tr">Durdurulamaz</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903074500 +0300" stop="20260903093000 +0300" channel="sinema">
-    <title lang="tr">Border Hunters</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903080000 +0300" stop="20260903100000 +0300" channel="sinema">
-    <title lang="tr">Çılgın Kral</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903080000 +0300" stop="20260903103000 +0300" channel="sinema">
-    <title lang="tr">Forrest Gump</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903080000 +0300" stop="20260903094500 +0300" channel="sinema">
-    <title lang="tr">Kutu 314</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903081500 +0300" stop="20260903094500 +0300" channel="sinema">
-    <title lang="tr">Küçük Vampir</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903082000 +0300" stop="20260903085000 +0300" channel="sinema">
-    <title lang="tr">Sultanların Mirası</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903083000 +0300" stop="20260903103000 +0300" channel="sinema">
-    <title lang="tr">Unutulmayan Aşk</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903083000 +0300" stop="20260903101500 +0300" channel="sinema">
-    <title lang="tr">İstikamet: Düğün</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903083000 +0300" stop="20260903101500 +0300" channel="sinema">
-    <title lang="tr">Yılbaşı Eğlencesi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903084500 +0300" stop="20260903104500 +0300" channel="sinema">
-    <title lang="tr">Julia Sessiz</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903085000 +0300" stop="20260903092000 +0300" channel="sinema">
-    <title lang="tr">Arkeo</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903090000 +0300" stop="20260903120000 +0300" channel="sinema">
-    <title lang="tr">Tivibu'nun Renkli Dünyası</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903090000 +0300" stop="20260903110000 +0300" channel="sinema">
-    <title lang="tr">Nalan</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903091500 +0300" stop="20260903110000 +0300" channel="sinema">
-    <title lang="tr">Erken Kış</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903092000 +0300" stop="20260903101500 +0300" channel="sinema">
-    <title lang="tr">Zaman Tüneli</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903093000 +0300" stop="20260903113000 +0300" channel="sinema">
-    <title lang="tr">Uncharted</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903093000 +0300" stop="20260903111500 +0300" channel="sinema">
-    <title lang="tr">Durdurulamaz</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903094500 +0300" stop="20260903114500 +0300" channel="sinema">
-    <title lang="tr">Mavka: Ormanın Şarkısı</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903094500 +0300" stop="20260903121500 +0300" channel="sinema">
-    <title lang="tr">Forrest Gump</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903100000 +0300" stop="20260903113000 +0300" channel="sinema">
-    <title lang="tr">Küçük Vampir</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903101500 +0300" stop="20260903110500 +0300" channel="sinema">
-    <title lang="tr">Gerçek Oppenheimer</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903101500 +0300" stop="20260903120000 +0300" channel="sinema">
-    <title lang="tr">Aşkın Gözü Kördür</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903101500 +0300" stop="20260903120000 +0300" channel="sinema">
-    <title lang="tr">İstikamet: Düğün</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903103000 +0300" stop="20260903123000 +0300" channel="sinema">
-    <title lang="tr">Julia Sessiz</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903103000 +0300" stop="20260903121500 +0300" channel="sinema">
-    <title lang="tr">Senin İçin</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903104500 +0300" stop="20260903124500 +0300" channel="sinema">
-    <title lang="tr">Hope Caddesi'nin Güneyi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903110000 +0300" stop="20260903130000 +0300" channel="sinema">
-    <title lang="tr">Akıllara Seza</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903110000 +0300" stop="20260903124500 +0300" channel="sinema">
-    <title lang="tr">Erken Kış</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903110500 +0300" stop="20260903120000 +0300" channel="sinema">
-    <title lang="tr">Hollywood'un Savaşı United Under The Flag</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903111500 +0300" stop="20260903131500 +0300" channel="sinema">
-    <title lang="tr">Uncharted</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903113000 +0300" stop="20260903141500 +0300" channel="sinema">
-    <title lang="tr">Da Vinci Şifresi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903113000 +0300" stop="20260903133000 +0300" channel="sinema">
-    <title lang="tr">Mavka: Ormanın Şarkısı</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903114500 +0300" stop="20260903133000 +0300" channel="sinema">
-    <title lang="tr">Korsanlar!</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903120000 +0300" stop="20260903150000 +0300" channel="sinema">
-    <title lang="tr">Tivibu'nun Renkli Dünyası</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903120000 +0300" stop="20260903125500 +0300" channel="sinema">
-    <title lang="tr">Viking Rollo, Sürgünden Fetihlere</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903120000 +0300" stop="20260903140000 +0300" channel="sinema">
-    <title lang="tr">Karı ve Koca</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903120000 +0300" stop="20260903134500 +0300" channel="sinema">
-    <title lang="tr">Aşkın Gözü Kördür</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903121500 +0300" stop="20260903140000 +0300" channel="sinema">
-    <title lang="tr">Seni Seviyorum Hedi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903121500 +0300" stop="20260903140000 +0300" channel="sinema">
-    <title lang="tr">Senin İçin</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903123000 +0300" stop="20260903143000 +0300" channel="sinema">
-    <title lang="tr">Hope Caddesi'nin Güneyi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903124500 +0300" stop="20260903141500 +0300" channel="sinema">
-    <title lang="tr">Marian'ın Serüvenleri</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903124500 +0300" stop="20260903144500 +0300" channel="sinema">
-    <title lang="tr">Akıllara Seza</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903125500 +0300" stop="20260903142000 +0300" channel="sinema">
-    <title lang="tr">Corleone: Mafya ve Kan</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903130000 +0300" stop="20260903150000 +0300" channel="sinema">
-    <title lang="tr">Bir Aşk İki Hayat</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903131500 +0300" stop="20260903160000 +0300" channel="sinema">
-    <title lang="tr">Da Vinci Şifresi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903133000 +0300" stop="20260903150000 +0300" channel="sinema">
-    <title lang="tr">Samsam</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903133000 +0300" stop="20260903151500 +0300" channel="sinema">
-    <title lang="tr">Korsanlar!</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903134500 +0300" stop="20260903154500 +0300" channel="sinema">
-    <title lang="tr">Karı ve Koca</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903140000 +0300" stop="20260903154500 +0300" channel="sinema">
-    <title lang="tr">Seninle Birlikte</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903140000 +0300" stop="20260903160000 +0300" channel="sinema">
-    <title lang="tr">Okyanus Kadar Derin</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903140000 +0300" stop="20260903154500 +0300" channel="sinema">
-    <title lang="tr">Seni Seviyorum Hedi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903141500 +0300" stop="20260903160000 +0300" channel="sinema">
-    <title lang="tr">Hırçın</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903141500 +0300" stop="20260903160000 +0300" channel="sinema">
-    <title lang="tr">Dominique</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903142000 +0300" stop="20260903145000 +0300" channel="sinema">
-    <title lang="tr">Sultanların Mirası</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903143000 +0300" stop="20260903160000 +0300" channel="sinema">
-    <title lang="tr">Marian'ın Serüvenleri</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903144500 +0300" stop="20260903164500 +0300" channel="sinema">
-    <title lang="tr">Bir Aşk İki Hayat</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903145000 +0300" stop="20260903152000 +0300" channel="sinema">
-    <title lang="tr">Arkeo</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903150000 +0300" stop="20260903180000 +0300" channel="sinema">
-    <title lang="tr">Tivibu'nun Renkli Dünyası</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903150000 +0300" stop="20260903173000 +0300" channel="sinema">
-    <title lang="tr">Son Bir Tatil</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903150000 +0300" stop="20260903164500 +0300" channel="sinema">
-    <title lang="tr">Dedektif Sun Ve Ekibi: Kurtarma Operasyonu</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903151500 +0300" stop="20260903164500 +0300" channel="sinema">
-    <title lang="tr">Samsam</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903152000 +0300" stop="20260903161500 +0300" channel="sinema">
-    <title lang="tr">Zaman Tüneli</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903154500 +0300" stop="20260903173000 +0300" channel="sinema">
-    <title lang="tr">Daha Yeni Başladık</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903154500 +0300" stop="20260903173000 +0300" channel="sinema">
-    <title lang="tr">Seninle Birlikte</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903154500 +0300" stop="20260903174500 +0300" channel="sinema">
-    <title lang="tr">Okyanus Kadar Derin</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903160000 +0300" stop="20260903180000 +0300" channel="sinema">
-    <title lang="tr">It's Okay!</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903160000 +0300" stop="20260903174500 +0300" channel="sinema">
-    <title lang="tr">Hırçın</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903160000 +0300" stop="20260903180000 +0300" channel="sinema">
-    <title lang="tr">Tekerlekli Ölüm</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903160000 +0300" stop="20260903174500 +0300" channel="sinema">
-    <title lang="tr">Dominique</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903160000 +0300" stop="20260903181500 +0300" channel="sinema">
-    <title lang="tr">Carmen</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903161500 +0300" stop="20260903170500 +0300" channel="sinema">
-    <title lang="tr">Gerçek Oppenheimer</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903164500 +0300" stop="20260903191500 +0300" channel="sinema">
-    <title lang="tr">Son Bir Tatil</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903164500 +0300" stop="20260903183000 +0300" channel="sinema">
-    <title lang="tr">Earwıg' in Sihirli Şarkısı</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903164500 +0300" stop="20260903183000 +0300" channel="sinema">
-    <title lang="tr">Dedektif Sun Ve Ekibi: Kurtarma Operasyonu</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903170500 +0300" stop="20260903180000 +0300" channel="sinema">
-    <title lang="tr">Hollywood'un Savaşı United Under The Flag</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903173000 +0300" stop="20260903200000 +0300" channel="sinema">
-    <title lang="tr">Cebimde Kelimeler</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903173000 +0300" stop="20260903191500 +0300" channel="sinema">
-    <title lang="tr">Modern Persuasion</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903173000 +0300" stop="20260903191500 +0300" channel="sinema">
-    <title lang="tr">Daha Yeni Başladık</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903174500 +0300" stop="20260903194500 +0300" channel="sinema">
-    <title lang="tr">It's Okay!</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903174500 +0300" stop="20260903194500 +0300" channel="sinema">
-    <title lang="tr">Tekerlekli Ölüm</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903174500 +0300" stop="20260903200000 +0300" channel="sinema">
-    <title lang="tr">Carmen</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903180000 +0300" stop="20260903210000 +0300" channel="sinema">
-    <title lang="tr">Tivibu'nun Renkli Dünyası</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903180000 +0300" stop="20260903190000 +0300" channel="sinema">
-    <title lang="tr">1917: Devrimi İnşa Etmek</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903180000 +0300" stop="20260903200000 +0300" channel="sinema">
-    <title lang="tr">Sefiller</title>
-    <category lang="tr">Dizi</category>
-  </programme>
-  <programme start="20260903180000 +0300" stop="20260903194500 +0300" channel="sinema">
-    <title lang="tr">İkili Takım</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903181500 +0300" stop="20260903194500 +0300" channel="sinema">
-    <title lang="tr">Altına Hücum</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903183000 +0300" stop="20260903200000 +0300" channel="sinema">
-    <title lang="tr">Kartopu Savaşları</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903183000 +0300" stop="20260903201500 +0300" channel="sinema">
-    <title lang="tr">Earwıg' in Sihirli Şarkısı</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903190000 +0300" stop="20260903195500 +0300" channel="sinema">
-    <title lang="tr">Gemi Batırıcıları</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903191500 +0300" stop="20260903214500 +0300" channel="sinema">
-    <title lang="tr">Cebimde Kelimeler</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903191500 +0300" stop="20260903213000 +0300" channel="sinema">
-    <title lang="tr">How To Make A Kılling</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903191500 +0300" stop="20260903210000 +0300" channel="sinema">
-    <title lang="tr">Modern Persuasion</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903194500 +0300" stop="20260903214500 +0300" channel="sinema">
-    <title lang="tr">Sefiller</title>
-    <category lang="tr">Dizi</category>
-  </programme>
-  <programme start="20260903194500 +0300" stop="20260903220000 +0300" channel="sinema">
-    <title lang="tr">Terminatör 4: Kurtuluş</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903194500 +0300" stop="20260903213000 +0300" channel="sinema">
-    <title lang="tr">İkili Takım</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903194500 +0300" stop="20260903220000 +0300" channel="sinema">
-    <title lang="tr">Beyaz Şövalyeler</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903195500 +0300" stop="20260903203000 +0300" channel="sinema">
-    <title lang="tr">Kuzey Yıldızı İbn Fadlan Ve İdil Bulgarları</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903200000 +0300" stop="20260903213000 +0300" channel="sinema">
-    <title lang="tr">Count Me In</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903200000 +0300" stop="20260903221500 +0300" channel="sinema">
-    <title lang="tr">Ölü Mevsim</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903200000 +0300" stop="20260903214500 +0300" channel="sinema">
-    <title lang="tr">Yuvadan Uzakta</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903200000 +0300" stop="20260903213000 +0300" channel="sinema">
-    <title lang="tr">Altına Hücum</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903201500 +0300" stop="20260903214500 +0300" channel="sinema">
-    <title lang="tr">Kartopu Savaşları</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903203000 +0300" stop="20260903210000 +0300" channel="sinema">
-    <title lang="tr">Kırılma Anı</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903210000 +0300" stop="20260904000000 +0300" channel="sinema">
-    <title lang="tr">Tivibu'nun Renkli Dünyası</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903210000 +0300" stop="20260903220500 +0300" channel="sinema">
-    <title lang="tr">Nereden Nereye</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903210000 +0300" stop="20260903231500 +0300" channel="sinema">
-    <title lang="tr">How To Make A Kılling</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903213000 +0300" stop="20260903233000 +0300" channel="sinema">
-    <title lang="tr">Kötülük Diye Bir Şey Yok</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903213000 +0300" stop="20260903234500 +0300" channel="sinema">
-    <title lang="tr">Terminatör 4: Kurtuluş</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903213000 +0300" stop="20260903231500 +0300" channel="sinema">
-    <title lang="tr">Aşk Çeşmesi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903213000 +0300" stop="20260903234500 +0300" channel="sinema">
-    <title lang="tr">Beyaz Şövalyeler</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903214500 +0300" stop="20260903231500 +0300" channel="sinema">
-    <title lang="tr">Count Me In</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903214500 +0300" stop="20260904000000 +0300" channel="sinema">
-    <title lang="tr">Ölü Mevsim</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903214500 +0300" stop="20260903233000 +0300" channel="sinema">
-    <title lang="tr">Saftirik: İşte Şimdi Yandık</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903214500 +0300" stop="20260903233000 +0300" channel="sinema">
-    <title lang="tr">Yuvadan Uzakta</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903220000 +0300" stop="20260904004500 +0300" channel="sinema">
-    <title lang="tr">Da Vinci Şifresi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903220000 +0300" stop="20260904001500 +0300" channel="sinema">
-    <title lang="tr">Uzay Yolcuları</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903220000 +0300" stop="20260904001500 +0300" channel="sinema">
-    <title lang="tr">Kefernahum</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903220500 +0300" stop="20260903230500 +0300" channel="sinema">
-    <title lang="tr">Altın: Açgözlülüğün Para Birimi</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903221500 +0300" stop="20260904000000 +0300" channel="sinema">
-    <title lang="tr">Sevimli Hırsız</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903230500 +0300" stop="20260903235500 +0300" channel="sinema">
-    <title lang="tr">Soğuk Savaş ve Sinema</title>
-    <category lang="tr">Sinema</category>
-  </programme>
-  <programme start="20260903231500 +0300" stop="20260904011500 +0300" channel="sinema">
-    <title lang="tr">Julia Sessiz</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903231500 +0300" stop="20260904011500 +0300" channel="sinema">
-    <title lang="tr">Kötülük Diye Bir Şey Yok</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903231500 +0300" stop="20260904013000 +0300" channel="sinema">
-    <title lang="tr">Molly Singer'ın Yeniden Eğitimi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903231500 +0300" stop="20260904011500 +0300" channel="sinema">
-    <title lang="tr">KarıandKoca</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903231500 +0300" stop="20260904010000 +0300" channel="sinema">
-    <title lang="tr">Aşk Çeşmesi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903233000 +0300" stop="20260904011500 +0300" channel="sinema">
-    <title lang="tr">İlgi Manyağı</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903233000 +0300" stop="20260904011500 +0300" channel="sinema">
-    <title lang="tr">Disco Boy</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903233000 +0300" stop="20260904014500 +0300" channel="sinema">
-    <title lang="tr">Mean Gırls</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903233000 +0300" stop="20260904011500 +0300" channel="sinema">
-    <title lang="tr">Dipdip: Bir Okyanus Macerası</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903233000 +0300" stop="20260904013000 +0300" channel="sinema">
-    <title lang="tr">Saftirik Greg'in Günlüğü:rodrıck Kuralları</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903233000 +0300" stop="20260904011500 +0300" channel="sinema">
-    <title lang="tr">Saftirik: İşte Şimdi Yandık</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903234500 +0300" stop="20260904014500 +0300" channel="sinema">
-    <title lang="tr">Dünya Evi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903234500 +0300" stop="20260904023000 +0300" channel="sinema">
-    <title lang="tr">Da Vinci Şifresi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903234500 +0300" stop="20260904020000 +0300" channel="sinema">
-    <title lang="tr">Uzay Yolcuları</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903234500 +0300" stop="20260904013000 +0300" channel="sinema">
-    <title lang="tr">One Direction: This Is Us</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903234500 +0300" stop="20260904020000 +0300" channel="sinema">
-    <title lang="tr">Parazit</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903234500 +0300" stop="20260904013000 +0300" channel="sinema">
-    <title lang="tr">Seni Seviyorum Hedi</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903234500 +0300" stop="20260904020000 +0300" channel="sinema">
-    <title lang="tr">Kefernahum</title>
-    <category lang="tr">Film</category>
-  </programme>
-  <programme start="20260903235500 +0300" stop="20260904003000 +0300" channel="sinema">
-    <title lang="tr">Sultanların Mirası</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
-  <programme start="20260903235500 +0300" stop="20260904003500 +0300" channel="sinema">
-    <title lang="tr">Kuzey Yıldızı İbn Fadlan Ve İdil Bulgarları</title>
-    <category lang="tr">Yaşam</category>
-  </programme>
+  <channel id="si_nema_1001">
+    <display-name lang="tr">SİNEMA 1001</display-name>
+  </channel>
+  <channel id="si_nema_1002">
+    <display-name lang="tr">SİNEMA 1002</display-name>
+  </channel>
+  <channel id="beni_m_kanalim">
+    <display-name lang="tr">BENİM KANALIM</display-name>
+  </channel>
+  <channel id="filmscreen_international">
+    <display-name lang="tr">FILMSCREEN INTERNATIONAL</display-name>
+  </channel>
+  <channel id="cosmo_en">
+    <display-name lang="tr">Cosmo EN</display-name>
+  </channel>
+  <channel id="bbc_first">
+    <display-name lang="tr">BBC FIRST</display-name>
+  </channel>
+  <channel id="fx">
+    <display-name lang="tr">FX</display-name>
+  </channel>
+  <channel id="epic_drama">
+    <display-name lang="tr">EPIC DRAMA</display-name>
+  </channel>
+  <channel id="trt_1">
+    <display-name lang="tr">TRT 1</display-name>
+  </channel>
+  <channel id="kanal_d">
+    <display-name lang="tr">KANAL D</display-name>
+  </channel>
+  <channel id="atv">
+    <display-name lang="tr">ATV</display-name>
+  </channel>
+  <channel id="show_tv">
+    <display-name lang="tr">SHOW TV</display-name>
+  </channel>
+  <channel id="now">
+    <display-name lang="tr">NOW</display-name>
+  </channel>
+  <channel id="star_tv">
+    <display-name lang="tr">STAR TV</display-name>
+  </channel>
+  <channel id="kanal_7">
+    <display-name lang="tr">KANAL 7</display-name>
+  </channel>
+  <channel id="tv8">
+    <display-name lang="tr">TV8</display-name>
+  </channel>
+  <channel id="360">
+    <display-name lang="tr">360</display-name>
+  </channel>
+  <channel id="beyaz_tv">
+    <display-name lang="tr">BEYAZ TV</display-name>
+  </channel>
+  <channel id="trt_haber">
+    <display-name lang="tr">TRT HABER</display-name>
+  </channel>
+  <channel id="ntv">
+    <display-name lang="tr">NTV</display-name>
+  </channel>
+  <channel id="a_haber">
+    <display-name lang="tr">A HABER</display-name>
+  </channel>
+  <channel id="24">
+    <display-name lang="tr">24</display-name>
+  </channel>
+  <channel id="cnn_turk">
+    <display-name lang="tr">CNN TÜRK</display-name>
+  </channel>
+  <channel id="haberturk">
+    <display-name lang="tr">HABERTÜRK</display-name>
+  </channel>
+  <channel id="bloomberg_ht">
+    <display-name lang="tr">BLOOMBERG HT</display-name>
+  </channel>
+  <channel id="ulke_tv">
+    <display-name lang="tr">ÜLKE TV</display-name>
+  </channel>
+  <channel id="tvnet">
+    <display-name lang="tr">TVNET</display-name>
+  </channel>
+  <channel id="cnbc_e">
+    <display-name lang="tr">CNBC-e</display-name>
+  </channel>
+  <channel id="tgrt_haber">
+    <display-name lang="tr">TGRT HABER</display-name>
+  </channel>
+  <channel id="a_para">
+    <display-name lang="tr">A PARA</display-name>
+  </channel>
+  <channel id="aki_t_tv">
+    <display-name lang="tr">AKİT TV</display-name>
+  </channel>
+  <channel id="haber_global">
+    <display-name lang="tr">HABER GLOBAL</display-name>
+  </channel>
+  <channel id="tv_100">
+    <display-name lang="tr">TV 100</display-name>
+  </channel>
+  <channel id="benguturk">
+    <display-name lang="tr">BENGÜTÜRK</display-name>
+  </channel>
+  <channel id="di_yanet_tv">
+    <display-name lang="tr">DİYANET TV</display-name>
+  </channel>
+  <channel id="a2">
+    <display-name lang="tr">A2</display-name>
+  </channel>
+  <channel id="tv2">
+    <display-name lang="tr">TV2</display-name>
+  </channel>
+  <channel id="tv_8_5">
+    <display-name lang="tr">TV 8,5</display-name>
+  </channel>
+  <channel id="tlc">
+    <display-name lang="tr">TLC</display-name>
+  </channel>
+  <channel id="dmax">
+    <display-name lang="tr">DMAX</display-name>
+  </channel>
+  <channel id="trt_2">
+    <display-name lang="tr">TRT 2</display-name>
+  </channel>
+  <channel id="vav_tv">
+    <display-name lang="tr">VAV TV</display-name>
+  </channel>
+  <channel id="turkhaber_tv">
+    <display-name lang="tr">TÜRKHABER TV</display-name>
+  </channel>
+  <channel id="tv4">
+    <display-name lang="tr">TV4</display-name>
+  </channel>
+  <channel id="kon_tv">
+    <display-name lang="tr">KON TV</display-name>
+  </channel>
+  <channel id="ekol_tv">
+    <display-name lang="tr">EKOL TV</display-name>
+  </channel>
+  <channel id="ulusal_1">
+    <display-name lang="tr">ULUSAL 1</display-name>
+  </channel>
+  <channel id="ekoturk">
+    <display-name lang="tr">EKOTÜRK</display-name>
+  </channel>
+  <channel id="gzt_tv">
+    <display-name lang="tr">GZT TV</display-name>
+  </channel>
+  <channel id="tv_5">
+    <display-name lang="tr">TV 5</display-name>
+  </channel>
+  <channel id="semerkand_tv">
+    <display-name lang="tr">SEMERKAND TV</display-name>
+  </channel>
+  <channel id="halk_tv">
+    <display-name lang="tr">HALK TV</display-name>
+  </channel>
+  <channel id="szc_tv">
+    <display-name lang="tr">SZC TV</display-name>
+  </channel>
+  <channel id="eurosport_1">
+    <display-name lang="tr">EUROSPORT 1</display-name>
+  </channel>
+  <channel id="eurosport_2">
+    <display-name lang="tr">EUROSPORT 2</display-name>
+  </channel>
+  <channel id="ti_vi_bu_spor_1">
+    <display-name lang="tr">TİVİBU SPOR 1</display-name>
+  </channel>
+  <channel id="ti_vi_bu_spor_2">
+    <display-name lang="tr">TİVİBU SPOR 2</display-name>
+  </channel>
+  <channel id="ti_vi_bu_spor_3">
+    <display-name lang="tr">TİVİBU SPOR 3</display-name>
+  </channel>
+  <channel id="ti_vi_bu_spor_4">
+    <display-name lang="tr">TİVİBU SPOR 4</display-name>
+  </channel>
+  <channel id="ti_vi_bu_spor">
+    <display-name lang="tr">TİVİBU SPOR</display-name>
+  </channel>
+  <channel id="a_spor">
+    <display-name lang="tr">A SPOR</display-name>
+  </channel>
+  <channel id="trt_spor">
+    <display-name lang="tr">TRT SPOR</display-name>
+  </channel>
+  <channel id="trt_spor_yildiz">
+    <display-name lang="tr">TRT SPOR YILDIZ</display-name>
+  </channel>
+  <channel id="fb_tv">
+    <display-name lang="tr">FB TV</display-name>
+  </channel>
+  <channel id="ht_spor_hd">
+    <display-name lang="tr">HT SPOR HD</display-name>
+  </channel>
+  <channel id="fight_network">
+    <display-name lang="tr">FIGHT NETWORK</display-name>
+  </channel>
+  <channel id="cosmo_sports">
+    <display-name lang="tr">COSMO SPORTS</display-name>
+  </channel>
+  <channel id="trt_3_spor">
+    <display-name lang="tr">TRT 3 SPOR</display-name>
+  </channel>
+  <channel id="trt_belgesel">
+    <display-name lang="tr">TRT BELGESEL</display-name>
+  </channel>
+  <channel id="habi_tat_tv">
+    <display-name lang="tr">HABİTAT TV</display-name>
+  </channel>
+  <channel id="national_geographic">
+    <display-name lang="tr">NATIONAL GEOGRAPHIC</display-name>
+  </channel>
+  <channel id="national_geographic_wild">
+    <display-name lang="tr">NATIONAL GEOGRAPHIC WILD</display-name>
+  </channel>
+  <channel id="discovery_channel">
+    <display-name lang="tr">DISCOVERY CHANNEL</display-name>
+  </channel>
+  <channel id="id">
+    <display-name lang="tr">ID</display-name>
+  </channel>
+  <channel id="viasat_history">
+    <display-name lang="tr">VIASAT HISTORY</display-name>
+  </channel>
+  <channel id="love_nature">
+    <display-name lang="tr">LOVE NATURE</display-name>
+  </channel>
+  <channel id="bbc_earth">
+    <display-name lang="tr">BBC EARTH</display-name>
+  </channel>
+  <channel id="trt_cocuk">
+    <display-name lang="tr">TRT ÇOCUK</display-name>
+  </channel>
+  <channel id="mi_ni_ka_cocuk">
+    <display-name lang="tr">MİNİKA ÇOCUK</display-name>
+  </channel>
+  <channel id="mi_ni_ka_go">
+    <display-name lang="tr">MİNİKA GO</display-name>
+  </channel>
+  <channel id="trt_di_yanet_cocuk">
+    <display-name lang="tr">TRT DİYANET ÇOCUK</display-name>
+  </channel>
+  <channel id="spacetoon">
+    <display-name lang="tr">SPACETOON</display-name>
+  </channel>
+  <channel id="cartoonito">
+    <display-name lang="tr">CARTOONITO</display-name>
+  </channel>
+  <channel id="disney_junior">
+    <display-name lang="tr">DISNEY JUNIOR</display-name>
+  </channel>
+  <channel id="moonbug">
+    <display-name lang="tr">MOONBUG</display-name>
+  </channel>
+  <channel id="cartoon_network">
+    <display-name lang="tr">CARTOON NETWORK</display-name>
+  </channel>
+  <channel id="babytv">
+    <display-name lang="tr">BABYTV</display-name>
+  </channel>
+  <channel id="nickelodeon">
+    <display-name lang="tr">NICKELODEON</display-name>
+  </channel>
+  <channel id="nicktoons">
+    <display-name lang="tr">NICKTOONS</display-name>
+  </channel>
+  <channel id="nick_jr">
+    <display-name lang="tr">NICK JR</display-name>
+  </channel>
+  <channel id="da_vinci">
+    <display-name lang="tr">DA VINCI</display-name>
+  </channel>
+  <channel id="trt_genc">
+    <display-name lang="tr">TRT GENÇ</display-name>
+  </channel>
+  <channel id="trt_turk">
+    <display-name lang="tr">TRT TÜRK</display-name>
+  </channel>
+  <channel id="trt_avaz">
+    <display-name lang="tr">TRT AVAZ</display-name>
+  </channel>
+  <channel id="trt_kurdi">
+    <display-name lang="tr">TRT KURDİ</display-name>
+  </channel>
+  <channel id="dost_tv">
+    <display-name lang="tr">DOST TV</display-name>
+  </channel>
+  <channel id="tele_1">
+    <display-name lang="tr">TELE 1</display-name>
+  </channel>
+  <channel id="ti_vi_6">
+    <display-name lang="tr">TİVİ 6</display-name>
+  </channel>
+  <channel id="as_tv">
+    <display-name lang="tr">AS TV</display-name>
+  </channel>
+  <channel id="tyt_turk">
+    <display-name lang="tr">TYT TÜRK</display-name>
+  </channel>
+  <channel id="lalegul">
+    <display-name lang="tr">LALEGÜL</display-name>
+  </channel>
+  <channel id="flash_haber_tv">
+    <display-name lang="tr">FLASH HABER TV</display-name>
+  </channel>
+  <channel id="trt_muzi_k">
+    <display-name lang="tr">TRT MÜZİK</display-name>
+  </channel>
+  <channel id="number1_turk">
+    <display-name lang="tr">NUMBER1 TÜRK</display-name>
+  </channel>
+  <channel id="dream_turk_tv">
+    <display-name lang="tr">DREAM TÜRK TV</display-name>
+  </channel>
+  <channel id="power_tv">
+    <display-name lang="tr">POWER TV</display-name>
+  </channel>
+  <channel id="power_turk">
+    <display-name lang="tr">POWER TÜRK</display-name>
+  </channel>
+  <channel id="cnn_international">
+    <display-name lang="tr">CNN INTERNATIONAL</display-name>
+  </channel>
+  <channel id="al_jazeera_international">
+    <display-name lang="tr">AL JAZEERA INTERNATIONAL</display-name>
+  </channel>
+  <channel id="trt_world">
+    <display-name lang="tr">TRT WORLD</display-name>
+  </channel>
+  <channel id="cnbc">
+    <display-name lang="tr">CNBC</display-name>
+  </channel>
+  <channel id="bbc_news">
+    <display-name lang="tr">BBC NEWS</display-name>
+  </channel>
+  <channel id="bloomberg">
+    <display-name lang="tr">BLOOMBERG</display-name>
+  </channel>
+  <channel id="anews">
+    <display-name lang="tr">ANEWS</display-name>
+  </channel>
+  <channel id="tv5_monde">
+    <display-name lang="tr">TV5 MONDE</display-name>
+  </channel>
+  <channel id="nhk_world_japan">
+    <display-name lang="tr">NHK WORLD-JAPAN</display-name>
+  </channel>
+  <channel id="deutsche_welle">
+    <display-name lang="tr">DEUTSCHE WELLE</display-name>
+  </channel>
+  <channel id="trt_el_arabia">
+    <display-name lang="tr">TRT EL ARABIA</display-name>
+  </channel>
+  <channel id="al_jazeera_arabic">
+    <display-name lang="tr">AL JAZEERA ARABIC</display-name>
+  </channel>
+  <channel id="saudi_quran">
+    <display-name lang="tr">SAUDI QURAN</display-name>
+  </channel>
+  <channel id="al_sunnah">
+    <display-name lang="tr">AL SUNNAH</display-name>
+  </channel>
+  <channel id="rt_arabic">
+    <display-name lang="tr">RT ARABIC</display-name>
+  </channel>
+  <channel id="france_24">
+    <display-name lang="tr">FRANCE 24</display-name>
+  </channel>
+  <channel id="trt_eba">
+    <display-name lang="tr">TRT EBA</display-name>
+  </channel>
+  <channel id="turkce_pop">
+    <display-name lang="tr">TÜRKÇE POP</display-name>
+  </channel>
+  <channel id="turkce_slow">
+    <display-name lang="tr">TÜRKÇE SLOW</display-name>
+  </channel>
+  <channel id="turk_halk_muzi_gi">
+    <display-name lang="tr">TÜRK HALK MÜZİĞİ</display-name>
+  </channel>
+  <channel id="turk_sanat_muzi_gi">
+    <display-name lang="tr">TÜRK SANAT MÜZİĞİ</display-name>
+  </channel>
+  <channel id="tas_plak">
+    <display-name lang="tr">TAŞ PLAK</display-name>
+  </channel>
+  <channel id="di_ni_musi_ki">
+    <display-name lang="tr">DİNİ MUSİKİ</display-name>
+  </channel>
+  <channel id="arabesk">
+    <display-name lang="tr">ARABESK</display-name>
+  </channel>
+  <channel id="90_lar">
+    <display-name lang="tr">90’ LAR</display-name>
+  </channel>
+  <channel id="yabanci_pop">
+    <display-name lang="tr">YABANCI POP</display-name>
+  </channel>
+  <channel id="yabanci_rock">
+    <display-name lang="tr">YABANCI ROCK</display-name>
+  </channel>
+  <channel id="yabanci_slow">
+    <display-name lang="tr">YABANCI SLOW</display-name>
+  </channel>
+  <channel id="fi_lm_muzi_kleri">
+    <display-name lang="tr">FİLM MÜZİKLERİ</display-name>
+  </channel>
+  <channel id="oldies">
+    <display-name lang="tr">OLDIES</display-name>
+  </channel>
+  <channel id="blues">
+    <display-name lang="tr">BLUES</display-name>
+  </channel>
+  <channel id="jazz">
+    <display-name lang="tr">JAZZ</display-name>
+  </channel>
+  <channel id="klasi_k_muzi_k">
+    <display-name lang="tr">KLASİK MÜZİK</display-name>
+  </channel>
+  <channel id="retro">
+    <display-name lang="tr">RETRO</display-name>
+  </channel>
+  <channel id="akusti_k">
+    <display-name lang="tr">AKUSTİK</display-name>
+  </channel>
+  <channel id="lounge">
+    <display-name lang="tr">LOUNGE</display-name>
+  </channel>
+  <channel id="mutlu">
+    <display-name lang="tr">MUTLU</display-name>
+  </channel>
+  <channel id="calisirken">
+    <display-name lang="tr">ÇALIŞIRKEN</display-name>
+  </channel>
+  <channel id="ti_vi_bu_cocuk">
+    <display-name lang="tr">TİVİBU ÇOCUK</display-name>
+  </channel>
 </tv>
