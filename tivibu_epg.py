@@ -1,1432 +1,909 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
-"""
-TIVIBU 7 GÜNLÜK XMLTV EPG
-----------------------------------------
-Kaynak:
-    https://www.tivibu.com.tr/canli-tv
-
-Çıktı:
-    epg.xml
-
-Özellikler:
-    - Gerçek Tivibu kanallarını çıkarır
-    - Program isimlerini kanal içine doğru şekilde bağlar
-    - Yanlışlıkla program isimlerini kanal olarak eklemez
-    - 7 günlük EPG oluşturur
-    - API çalışmazsa HTML üzerinden devam eder
-    - GitHub Actions uyumludur
-    - Başarısız/boş EPG üretmez
-"""
-
-import html
 import re
-import sys
 import time
-import unicodedata
-import urllib.error
-import urllib.parse
-import urllib.request
-import xml.etree.ElementTree as ET
-
 from datetime import datetime, timedelta
-from http.cookiejar import CookieJar
+from zoneinfo import ZoneInfo
+from xml.etree.ElementTree import Element, SubElement, ElementTree
+
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 
-# ============================================================
-# AYARLAR
-# ============================================================
-
-BASE_URL = "https://www.tivibu.com.tr"
-LIVE_TV_URL = BASE_URL + "/canli-tv"
-
+TIVIBU_URL = "https://www.tivibu.com.tr/canli-tv"
 OUTPUT_FILE = "epg.xml"
 
-DAYS = 7
+TIMEZONE = ZoneInfo("Europe/Istanbul")
 
-TIMEZONE = "+0300"
+CHANNEL_EXCLUDE = {
+    "Nereden Nereye",
+    "Count Me In",
+    "Sefiller",
+    "Ölü Mevsim",
+    "Cebimde Kelimeler",
+    "Tivibu Canlı TV, Kanal ve Programlar",
+    "Tivibu Nedir?",
+    "Favori Kanallarım",
+    "Tivibu Spor Canlı İzle",
+    "TRT1 Canlı İzle",
+}
 
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/151.0.0.0 Safari/537.36"
+CATEGORY_WORDS = (
+    "Film",
+    "Dizi",
+    "Yaşam",
+    "Spor",
+    "Haber",
+    "Belgesel",
+    "Çocuk",
+    "Diğer",
+    "Müzik",
 )
 
-REQUEST_DELAY = 0.8
 
-TIMEOUT = 40
-
-
-# ============================================================
-# HTTP
-# ============================================================
-
-COOKIE_JAR = CookieJar()
-
-OPENER = urllib.request.build_opener(
-    urllib.request.HTTPCookieProcessor(COOKIE_JAR)
-)
-
-OPENER.addheaders = [
-    ("User-Agent", USER_AGENT),
-    ("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
-    ("Accept-Language", "tr-TR,tr;q=0.9,en-US;q=0.7,en;q=0.5"),
-    ("Cache-Control", "no-cache"),
-    ("Pragma", "no-cache"),
-    ("Connection", "keep-alive"),
-]
-
-
-def http_get(url):
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Accept": (
-                "text/html,application/xhtml+xml,"
-                "application/xml;q=0.9,*/*;q=0.8"
-            ),
-            "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.7,en;q=0.5",
-            "Referer": LIVE_TV_URL,
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
-        },
-        method="GET",
-    )
-
-    with OPENER.open(req, timeout=TIMEOUT) as response:
-        data = response.read()
-
-        charset = response.headers.get_content_charset()
-
-        if charset:
-            encoding = charset
-        else:
-            encoding = "utf-8"
-
-        return data.decode(encoding, errors="replace")
-
-
-# ============================================================
-# METİN
-# ============================================================
-
-def clean_text(value):
-    if value is None:
+def clean_text(text):
+    if not text:
         return ""
 
-    value = html.unescape(str(value))
-
-    value = re.sub(r"<br\s*/?>", " ", value, flags=re.I)
-    value = re.sub(r"<[^>]+>", " ", value)
-
-    value = value.replace("\xa0", " ")
-
-    value = re.sub(r"\s+", " ", value)
-
-    return value.strip()
+    text = text.replace("\xa0", " ")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
-def normalize_text(value):
-    value = clean_text(value)
-
-    value = value.replace("’", "'")
-    value = value.replace("`", "'")
-
-    return value.casefold().strip()
-
-
-def slugify(value):
-    value = clean_text(value)
-
-    value = unicodedata.normalize("NFKD", value)
-
-    value = "".join(
-        ch for ch in value
-        if not unicodedata.combining(ch)
-    )
-
-    value = value.lower()
-
-    value = value.replace("ı", "i")
-    value = value.replace("ş", "s")
-    value = value.replace("ğ", "g")
-    value = value.replace("ü", "u")
-    value = value.replace("ö", "o")
-    value = value.replace("ç", "c")
-
-    value = re.sub(r"[^a-z0-9]+", "", value)
-
-    return value
-
-
-# ============================================================
-# TARİH
-# ============================================================
-
-def parse_date_text(value):
-    if not value:
-        return None
-
-    m = re.search(
-        r"(\d{2})[./-](\d{2})[./-](\d{4})",
-        value
-    )
-
-    if not m:
-        return None
-
-    day = int(m.group(1))
-    month = int(m.group(2))
-    year = int(m.group(3))
-
-    try:
-        return datetime(year, month, day)
-    except ValueError:
-        return None
-
-
-def format_tivibu_date(dt, end=False):
-    if end:
-        return dt.strftime("%Y.%m.%d 23:59:59")
-
-    return dt.strftime("%Y.%m.%d 00:00:00")
-
-
-def find_tivibu_dates(page):
-    """
-    Sayfadaki bütün Tivibu tarihlerini bulur.
-    """
-
-    found = {}
-
-    patterns = [
-        r"\b(\d{2}\.\d{2}\.\d{4})\b",
-        r"\b(\d{2}/\d{2}/\d{4})\b",
-        r"\b(\d{2}-\d{2}-\d{4})\b",
-    ]
-
-    for pattern in patterns:
-        for match in re.finditer(pattern, page):
-            text = match.group(1)
-
-            dt = parse_date_text(text)
-
-            if dt:
-                key = dt.strftime("%Y-%m-%d")
-                found[key] = dt
-
-    return sorted(found.values())
-
-
-def get_target_dates(page):
-    dates = find_tivibu_dates(page)
-
-    today = datetime.now().replace(
-        hour=0,
-        minute=0,
-        second=0,
-        microsecond=0,
-    )
-
-    candidates = [
-        d for d in dates
-        if d >= today
-    ]
-
-    if len(candidates) >= DAYS:
-        return candidates[:DAYS]
-
-    # Sayfada tarih listesi değişirse fallback.
-    return [
-        today + timedelta(days=i)
-        for i in range(DAYS)
-    ]
-
-
-# ============================================================
-# GERÇEK KANAL LİSTESİ
-# ============================================================
-
-# Tivibu sayfasındaki müzik radyoları kanal değildir.
-# Bunları özellikle dışarıda bırakıyoruz.
-
-FALSE_CHANNELS = {
-    normalize_text(x)
-    for x in [
-        "TÜRKÇE POP",
-        "TÜRKÇE SLOW",
-        "TÜRK HALK MÜZİĞİ",
-        "TÜRK SANAT MÜZİĞİ",
-        "TAŞ PLAK",
-        "DİNİ MUSİKİ",
-        "ARABESK",
-        "90’ LAR",
-        "YABANCI POP",
-        "YABANCI ROCK",
-        "YABANCI SLOW",
-        "AKUSTİK",
-        "BLUES",
-        "JAZZ",
-        "KLASİK MÜZİK",
-        "LOUNGE",
-        "MUTLU",
-        "OLDIES",
-        "RETRO",
-        "ÇALIŞIRKEN",
-        "FİLM MÜZİKLERİ",
-    ]
-}
-
-
-# Bunlar sayfada link olarak bulunabilir fakat kanal değildir.
-
-FALSE_CHANNEL_PHRASES = {
-    normalize_text(x)
-    for x in [
-        "Favori Kanallarım",
-        "Tivibu Nedir?",
-        "Tivibu Canlı TV, Kanal ve Programlar",
-        "Tivibu Spor Canlı İzle",
-        "TRT1 Canlı İzle",
-        "Nereden Nereye",
-        "Count Me In",
-        "Sefiller",
-        "Ölü Mevsim",
-        "Cebimde Kelimeler",
-    ]
-}
-
-
-def is_probable_channel_name(name):
+def normalize_channel_name(name):
     name = clean_text(name)
 
-    if not name:
+    if name in CHANNEL_EXCLUDE:
+        return ""
+
+    return name
+
+
+def is_channel_anchor(item):
+    href = item.get("href", "")
+    text = clean_text(item.get("text", ""))
+
+    if not href or not text:
         return False
 
-    normalized = normalize_text(name)
-
-    if normalized in FALSE_CHANNELS:
+    if "/kanallar/" not in href:
         return False
 
-    if normalized in FALSE_CHANNEL_PHRASES:
+    if text in CHANNEL_EXCLUDE:
         return False
 
-    # Çok uzun başlıklar kanal olamaz.
-    if len(name) > 55:
+    if len(text) > 80:
         return False
 
-    # Program başlığı olma ihtimali yüksek ifadeler.
-    bad_words = [
-        "film -",
-        "dizi -",
-        "yaşam -",
-        "canlı",
-        "programı",
-        "program akışı",
-        "tek parça",
-        "fragman",
-    ]
+    if re.search(r"\b\d{1,2}:\d{2}\b", text):
+        return False
 
-    for word in bad_words:
-        if word in normalized:
-            return False
+    if "Canlı" in text:
+        return False
 
     return True
 
 
-def extract_channel_links(page):
+def parse_program_text(text):
     """
-    /kanallar/ bağlantılarından gerçek kanal isimlerini çıkarır.
+    Tivibu program linklerinden örnekler:
 
-    Aynı kanalın birden fazla kez görünmesini engeller.
+    Tivibu'nun Renkli Dünyası Yaşam - 00:00 → 03:00 Canlı
+    Sultanların Mirası Yaşam - 23:55 → 00:30 Canlı
     """
 
-    channels = []
+    text = clean_text(text)
 
-    seen = set()
+    if not text:
+        return None
 
-    # href + anchor içeriği
+    # Önce standart ok işareti
     pattern = re.compile(
-        r'<a\b[^>]*href\s*=\s*["\']([^"\']*/kanallar/[^"\']*)["\'][^>]*>'
-        r'(.*?)'
-        r'</a>',
-        re.I | re.S
-    )
-
-    for match in pattern.finditer(page):
-
-        href = html.unescape(match.group(1))
-        inner = match.group(2)
-
-        name = clean_text(inner)
-
-        # İçerik boşsa aria/title/data-name dene.
-        if not name:
-            attrs = match.group(0)
-
-            for attr in (
-                "aria-label",
-                "title",
-                "data-name",
-                "data-channel-name",
-            ):
-                m = re.search(
-                    rf'{attr}\s*=\s*["\']([^"\']+)["\']',
-                    attrs,
-                    re.I,
-                )
-
-                if m:
-                    name = clean_text(m.group(1))
-                    break
-
-        if not is_probable_channel_name(name):
-            continue
-
-        # Link URL'sinden slug çıkar.
-        parsed = urllib.parse.urlparse(href)
-
-        path = parsed.path.rstrip("/")
-
-        if "/kanallar/" not in path.lower():
-            continue
-
-        channel_slug = path.split("/")[-1]
-
-        if not channel_slug:
-            continue
-
-        key = normalize_text(name)
-
-        if key in seen:
-            continue
-
-        seen.add(key)
-
-        channels.append({
-            "name": name,
-            "slug": "tivibu_" + slugify(name),
-            "url_slug": channel_slug,
-            "href": href,
-        })
-
-    return channels
-
-
-# ============================================================
-# HTML İÇİ PROGRAM PARSE
-# ============================================================
-
-def extract_program_blocks(page):
-    """
-    Tivibu HTML'inde programlar genellikle:
-
-        Program Adı Kategori - 21:00 → 00:00 Canlı
-
-    şeklinde görünür.
-
-    Burada kanal bağlantılarından sonraki program bloklarını
-    tespit etmeye çalışıyoruz.
-    """
-
-    results = []
-
-    # Önce tüm metni normalize etmeden yakala.
-    text = page
-
-    # HTML entity'lerini aç.
-    text = html.unescape(text)
-
-    # Satırları oluştur.
-    text = re.sub(r"<script\b.*?</script>", "\n", text, flags=re.I | re.S)
-    text = re.sub(r"<style\b.*?</style>", "\n", text, flags=re.I | re.S)
-
-    text = re.sub(r"<[^>]+>", "\n", text)
-
-    text = text.replace("\r", "\n")
-
-    lines = []
-
-    for line in text.split("\n"):
-        line = clean_text(line)
-
-        if line:
-            lines.append(line)
-
-    # Program zaman formatları:
-    # 21:00 → 00:00
-    # 21:00 -> 00:00
-    # 21:00 - 00:00
-
-    time_re = re.compile(
-        r"(.+?)"
-        r"(?:\s+(?:Film|Dizi|Yaşam|Spor|Haber|Belgesel|Çocuk|Diğer)"
-        r")?"
-        r"\s*[-–—]"
-        r"\s*(\d{1,2}:\d{2})"
-        r"\s*(?:→|->|-)"
-        r"\s*(\d{1,2}:\d{2})"
+        r"^(.*?)\s+"
+        r"(?:Film|Dizi|Yaşam|Spor|Haber|Belgesel|Çocuk|Diğer|Müzik)"
+        r"\s*-\s*"
+        r"(\d{1,2}:\d{2})"
+        r"\s*(?:→|->|–|-)\s*"
+        r"(\d{1,2}:\d{2})"
         r"(?:\s+Canlı)?$",
-        re.I
+        re.IGNORECASE,
     )
 
-    for line in lines:
+    match = pattern.match(text)
 
-        m = time_re.search(line)
-
-        if not m:
-            continue
-
-        title = clean_text(m.group(1))
-
-        start_time = m.group(2)
-        end_time = m.group(3)
-
-        if not title:
-            continue
-
-        # Gereksiz HTML/site başlıklarını engelle.
-        bad = [
-            "sonuç bulunamadı",
-            "kanal ara",
-            "program akışı",
-            "içeriği izlemek için",
-            "giriş yap",
-            "üye ol",
-        ]
-
-        normalized = normalize_text(title)
-
-        if normalized in bad:
-            continue
-
-        results.append({
-            "title": title,
-            "start_time": start_time,
-            "end_time": end_time,
-        })
-
-    return results
-
-
-# ============================================================
-# KANAL BÖLÜMLERİNİ ÇIKAR
-# ============================================================
-
-def find_channel_sections(page, channels):
-    """
-    HTML'i kanal linklerine göre bölümlere ayırır.
-
-    Böylece:
-        SİNEMA TV
-        programları...
-
-    ile
-
-        SİNEMA 2
-        programları...
-
-    birbirine karışmaz.
-    """
-
-    sections = []
-
-    channel_patterns = []
-
-    for channel in channels:
-
-        name = re.escape(channel["name"])
-
-        pattern = re.compile(
-            r'<a\b[^>]*href\s*=\s*["\'][^"\']*/kanallar/'
-            r'[^"\']*["\'][^>]*>'
-            r'(.*?)'
-            r'</a>',
-            re.I | re.S
-        )
-
-        for m in pattern.finditer(page):
-
-            inner = clean_text(m.group(1))
-
-            if normalize_text(inner) == normalize_text(channel["name"]):
-
-                channel_patterns.append(
-                    (
-                        m.start(),
-                        m.end(),
-                        channel,
-                    )
-                )
-
-    channel_patterns.sort(key=lambda x: x[0])
-
-    for i, item in enumerate(channel_patterns):
-
-        start_pos = item[1]
-
-        if i + 1 < len(channel_patterns):
-            end_pos = channel_patterns[i + 1][0]
-        else:
-            end_pos = len(page)
-
-        chunk = page[start_pos:end_pos]
-
-        # Aşırı büyük bölüm olmasın.
-        if len(chunk) > 250000:
-            chunk = chunk[:250000]
-
-        sections.append(
-            (
-                item[2],
-                chunk,
-            )
-        )
-
-    return sections
-
-
-# ============================================================
-# SAAT PARSE
-# ============================================================
-
-def parse_hhmm(value):
-    m = re.match(r"^(\d{1,2}):(\d{2})$", value.strip())
-
-    if not m:
-        return None
-
-    hour = int(m.group(1))
-    minute = int(m.group(2))
-
-    if hour > 23 or minute > 59:
-        return None
-
-    return hour, minute
-
-
-def make_datetime(day, hhmm, allow_next_day=False):
-    parsed = parse_hhmm(hhmm)
-
-    if parsed is None:
-        return None
-
-    hour, minute = parsed
-
-    result = day.replace(
-        hour=hour,
-        minute=minute,
-        second=0,
-        microsecond=0,
-    )
-
-    if allow_next_day:
-        result += timedelta(days=1)
-
-    return result
-
-
-# ============================================================
-# PROGRAM EŞLEŞTİRME
-# ============================================================
-
-def parse_programs_from_channel_section(section, channel, day):
-    """
-    Tek kanal bölümünden programları çıkarır.
-
-    Aynı program farklı HTML alanlarında tekrar edebildiği için
-    başlangıç/bitiş/title kombinasyonuyla dedupe yapılır.
-    """
-
-    raw = section
-
-    raw = html.unescape(raw)
-
-    raw = re.sub(
-        r"<script\b.*?</script>",
-        "\n",
-        raw,
-        flags=re.I | re.S,
-    )
-
-    raw = re.sub(
-        r"<style\b.*?</style>",
-        "\n",
-        raw,
-        flags=re.I | re.S,
-    )
-
-    raw = re.sub(r"<[^>]+>", "\n", raw)
-
-    raw = raw.replace("\r", "\n")
-
-    lines = []
-
-    for line in raw.split("\n"):
-        line = clean_text(line)
-
-        if line:
-            lines.append(line)
-
-    programs = []
-
-    seen = set()
-
-    # Tivibu'nun kullandığı yapı.
-    #
-    # Örnek:
-    #
-    # Beyaz Şövalyeler Film - 19:45 → 22:00 Canlı
-
-    regexes = [
-        re.compile(
-            r"^(.*?)\s+"
-            r"(?:Film|Dizi|Yaşam|Spor|Haber|Belgesel|Çocuk|Diğer)"
-            r"\s*[-–—]\s*"
-            r"(\d{1,2}:\d{2})\s*"
-            r"(?:→|->|-)\s*"
-            r"(\d{1,2}:\d{2})"
-            r"(?:\s+Canlı)?$",
-            re.I,
-        ),
-
-        re.compile(
-            r"^(.*?)\s*[-–—]\s*"
-            r"(\d{1,2}:\d{2})\s*"
-            r"(?:→|->|-)\s*"
-            r"(\d{1,2}:\d{2})"
-            r"(?:\s+Canlı)?$",
-            re.I,
-        ),
-    ]
-
-    for line in lines:
-
-        match = None
-
-        for regex in regexes:
-            match = regex.search(line)
-
-            if match:
-                break
-
-        if not match:
-            continue
-
+    if match:
         title = clean_text(match.group(1))
+        start_time = match.group(2)
+        end_time = match.group(3)
 
-        start_str = match.group(2)
-        end_str = match.group(3)
+        if title:
+            return {
+                "title": title,
+                "start": start_time,
+                "end": end_time,
+            }
 
-        if not title:
-            continue
+    # Daha esnek yedek parser
+    fallback = re.search(
+        r"^(.*?)\s+(?:Film|Dizi|Yaşam|Spor|Haber|Belgesel|Çocuk|Diğer|Müzik)"
+        r"\s*-\s*(\d{1,2}:\d{2})\s*(?:→|->|–|-)\s*(\d{1,2}:\d{2})",
+        text,
+        re.IGNORECASE,
+    )
 
-        # Kanal ismi program olarak yakalanırsa alma.
-        if normalize_text(title) == normalize_text(channel["name"]):
-            continue
+    if fallback:
+        title = clean_text(fallback.group(1))
 
-        # Site navigasyonları.
-        if normalize_text(title) in FALSE_CHANNEL_PHRASES:
-            continue
-
-        start_dt = make_datetime(day, start_str)
-
-        if start_dt is None:
-            continue
-
-        end_dt = make_datetime(day, end_str)
-
-        if end_dt is None:
-            continue
-
-        # Gece yarısını aşan program.
-        if end_dt <= start_dt:
-            end_dt += timedelta(days=1)
-
-        key = (
-            channel["slug"],
-            start_dt.strftime("%Y%m%d%H%M"),
-            end_dt.strftime("%Y%m%d%H%M"),
-            normalize_text(title),
-        )
-
-        if key in seen:
-            continue
-
-        seen.add(key)
-
-        programs.append({
-            "channel": channel["slug"],
-            "channel_name": channel["name"],
-            "title": title,
-            "start": start_dt,
-            "stop": end_dt,
-        })
-
-    return programs
-
-
-# ============================================================
-# ANA SAYFADAN PROGRAM TOPLAMA
-# ============================================================
-
-def collect_from_html(page, channels, day):
-    """
-    HTML'deki gerçek kanal bölümlerinden programları toplar.
-    """
-
-    sections = find_channel_sections(page, channels)
-
-    programs = []
-
-    for channel, section in sections:
-
-        channel_programs = parse_programs_from_channel_section(
-            section,
-            channel,
-            day,
-        )
-
-        programs.extend(channel_programs)
-
-    # Dedupe
-    unique = {}
-
-    for program in programs:
-
-        key = (
-            program["channel"],
-            program["start"],
-            program["stop"],
-            normalize_text(program["title"]),
-        )
-
-        unique[key] = program
-
-    return list(unique.values())
-
-
-# ============================================================
-# TARİH BAZLI SAYFA DENEMELERİ
-# ============================================================
-
-def build_date_urls(day):
-    """
-    Tivibu'da tarih seçimi JS üzerinden yapılabildiği için
-    bilinen muhtemel query formatlarını dener.
-
-    Ana URL her zaman ilk seçenektir.
-    """
-
-    date1 = day.strftime("%Y-%m-%d")
-    date2 = day.strftime("%Y.%m.%d")
-    date3 = day.strftime("%d.%m.%Y")
-
-    return [
-        LIVE_TV_URL,
-
-        LIVE_TV_URL + "?date=" + urllib.parse.quote(date1),
-
-        LIVE_TV_URL + "?date=" + urllib.parse.quote(date2),
-
-        LIVE_TV_URL + "?date=" + urllib.parse.quote(date3),
-
-        LIVE_TV_URL + "?selectedDate=" + urllib.parse.quote(date1),
-
-        LIVE_TV_URL + "?selectedDate=" + urllib.parse.quote(date2),
-
-        LIVE_TV_URL + "?day=" + urllib.parse.quote(date1),
-
-        LIVE_TV_URL + "?day=" + urllib.parse.quote(date2),
-    ]
-
-
-def fetch_day_page(day):
-    """
-    Tarih için sayfayı almaya çalışır.
-
-    Eğer query parametresi desteklenmiyorsa ana sayfa döner.
-    """
-
-    tried = set()
-
-    for url in build_date_urls(day):
-
-        if url in tried:
-            continue
-
-        tried.add(url)
-
-        try:
-            page = http_get(url)
-
-            if len(page) < 10000:
-                continue
-
-            return page
-
-        except Exception:
-            continue
+        if title:
+            return {
+                "title": title,
+                "start": fallback.group(2),
+                "end": fallback.group(3),
+            }
 
     return None
 
 
-# ============================================================
-# XMLTV
-# ============================================================
-
-def xml_time(dt):
-    return dt.strftime("%Y%m%d%H%M%S") + " " + TIMEZONE
-
-
-def add_text_element(parent, tag, text, lang=None):
-
-    element = ET.SubElement(parent, tag)
-
-    if lang:
-        element.set("lang", lang)
-
-    element.text = text
-
-    return element
+def make_datetime(day, clock):
+    hour, minute = map(int, clock.split(":"))
+    return datetime(
+        day.year,
+        day.month,
+        day.day,
+        hour,
+        minute,
+        tzinfo=TIMEZONE,
+    )
 
 
-def write_xml(channels, programs, output_file):
-    tv = ET.Element(
+def build_absolute_programs(channel_programs, target_day):
+    """
+    Tivibu bazı kanallarda günün ilk programını:
+
+        23:55 → 00:30
+
+    şeklinde gösteriyor.
+
+    Bu durumda 23:55'in bir önceki güne ait olduğunu
+    otomatik olarak hesaplıyoruz.
+    """
+
+    result = []
+
+    if not channel_programs:
+        return result
+
+    previous_stop = None
+
+    for index, program in enumerate(channel_programs):
+        start_clock = program["start"]
+        end_clock = program["end"]
+
+        start_dt = make_datetime(target_day, start_clock)
+        end_dt = make_datetime(target_day, end_clock)
+
+        # Gece yarısını geçiyor
+        if end_dt <= start_dt:
+            end_dt += timedelta(days=1)
+
+        # İlk kayıt 18:00+ başlayıp gece yarısını geçiyorsa,
+        # büyük ihtimalle bir önceki günün programıdır.
+        if index == 0:
+            if (
+                start_dt.hour >= 18
+                and end_dt.date() > start_dt.date()
+            ):
+                start_dt -= timedelta(days=1)
+        else:
+            # Önceki programın bitişinden önce görünüyorsa
+            # bir sonraki güne taşı.
+            while start_dt < previous_stop:
+                start_dt += timedelta(days=1)
+
+            if end_dt <= start_dt:
+                end_dt += timedelta(days=1)
+
+        previous_stop = end_dt
+
+        result.append(
+            {
+                "title": program["title"],
+                "start": start_dt,
+                "stop": end_dt,
+            }
+        )
+
+    return result
+
+
+def extract_dom_data(page):
+    """
+    Sayfadaki bütün <a> elemanlarını DOM sırasıyla alır.
+
+    Önemli:
+    /kanallar/...  = gerçek kanal bağlantısı
+    /rv?...        = program bağlantısı
+
+    Böylece eski parser'daki kanal/program karışıklığı ortadan kalkar.
+    """
+
+    items = page.locator("a").evaluate_all(
+        """
+        els => els.map(a => ({
+            href: a.href || "",
+            text: (a.innerText || a.textContent || "").trim()
+        }))
+        """
+    )
+
+    channels = []
+    channel_seen = set()
+
+    programs_by_channel = {}
+
+    current_channel = None
+
+    for item in items:
+        href = item.get("href", "")
+        text = clean_text(item.get("text", ""))
+
+        if not text:
+            continue
+
+        # -----------------------------------------
+        # GERÇEK KANAL
+        # -----------------------------------------
+        if is_channel_anchor(item):
+            channel_name = normalize_channel_name(text)
+
+            if not channel_name:
+                continue
+
+            current_channel = channel_name
+
+            if channel_name not in channel_seen:
+                channel_seen.add(channel_name)
+                channels.append(channel_name)
+
+            if channel_name not in programs_by_channel:
+                programs_by_channel[channel_name] = []
+
+            continue
+
+        # -----------------------------------------
+        # PROGRAM
+        # -----------------------------------------
+        if current_channel:
+            program = parse_program_text(text)
+
+            if program:
+                programs_by_channel.setdefault(
+                    current_channel,
+                    []
+                ).append(program)
+
+    return channels, programs_by_channel
+
+
+def dismiss_cookie_popup(page):
+    possible_texts = [
+        "Tümünü Kabul Et",
+        "Tümünü kabul et",
+        "Kabul Et",
+        "Kabul et",
+        "Çerezleri Kabul Et",
+        "Çerezleri kabul et",
+        "Allow all",
+        "Accept All",
+        "Accept",
+    ]
+
+    for text in possible_texts:
+        try:
+            locator = page.get_by_text(text, exact=True)
+
+            count = locator.count()
+
+            for i in range(count):
+                try:
+                    element = locator.nth(i)
+
+                    if element.is_visible():
+                        element.click(force=True, timeout=1500)
+                        page.wait_for_timeout(500)
+                        return
+                except Exception:
+                    pass
+
+        except Exception:
+            pass
+
+
+def click_date(page, target_day, day_index):
+    """
+    0 = Bugün
+    1 = Yarın
+    2+ = dd.mm.yyyy
+    """
+
+    if day_index == 0:
+        labels = ["Bugün", "Bugün "]
+    elif day_index == 1:
+        labels = ["Yarın", "Yarın "]
+    else:
+        labels = [
+            target_day.strftime("%d.%m.%Y"),
+            target_day.strftime("%d.%m.%Y ").strip(),
+        ]
+
+    for label in labels:
+        try:
+            locator = page.get_by_text(label, exact=True)
+
+            count = locator.count()
+
+            for i in range(count - 1, -1, -1):
+                try:
+                    element = locator.nth(i)
+
+                    if not element.is_visible():
+                        continue
+
+                    element.scroll_into_view_if_needed(timeout=2000)
+                    element.click(force=True, timeout=3000)
+
+                    page.wait_for_timeout(2500)
+
+                    return True
+
+                except Exception:
+                    continue
+
+        except Exception:
+            continue
+
+    # JavaScript yedek yöntem
+    try:
+        clicked = page.evaluate(
+            """
+            label => {
+                const elements = Array.from(document.querySelectorAll("*"));
+
+                for (const el of elements) {
+                    if (!el.children.length &&
+                        (el.textContent || "").trim() === label) {
+
+                        let target = el;
+
+                        for (let i = 0; i < 5 && target; i++) {
+                            if (
+                                target.tagName === "BUTTON" ||
+                                target.tagName === "A" ||
+                                target.getAttribute("role") === "button" ||
+                                target.onclick
+                            ) {
+                                target.click();
+                                return true;
+                            }
+
+                            target = target.parentElement;
+                        }
+
+                        el.click();
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+            """,
+            labels[0],
+        )
+
+        if clicked:
+            page.wait_for_timeout(2500)
+            return True
+
+    except Exception:
+        pass
+
+    return False
+
+
+def fingerprint_programs(programs_by_channel):
+    values = []
+
+    for channel in sorted(programs_by_channel):
+        programs = programs_by_channel[channel]
+
+        for program in programs[:5]:
+            values.append(
+                (
+                    channel,
+                    program["title"],
+                    program["start"],
+                    program["end"],
+                )
+            )
+
+    return tuple(values)
+
+
+def get_day_schedule(page, target_day, day_index, previous_fingerprint=None):
+    print()
+    print("=" * 70)
+    print(
+        f"PROGRAM ALINIYOR: "
+        f"{target_day.strftime('%d.%m.%Y')}"
+    )
+    print("=" * 70)
+
+    # İlk gün zaten açık olabilir.
+    if day_index == 0:
+        page.wait_for_timeout(1500)
+
+    else:
+        clicked = click_date(
+            page,
+            target_day,
+            day_index,
+        )
+
+        if not clicked:
+            print(
+                f"UYARI: {target_day.strftime('%d.%m.%Y')} "
+                f"tarih butonu bulunamadı."
+            )
+
+        page.wait_for_timeout(1500)
+
+    # AJAX'ın tamamlanmasını bekle
+    try:
+        page.wait_for_load_state(
+            "networkidle",
+            timeout=8000,
+        )
+    except PlaywrightTimeoutError:
+        pass
+
+    page.wait_for_timeout(2000)
+
+    channels, programs = extract_dom_data(page)
+
+    count = sum(
+        len(value)
+        for value in programs.values()
+    )
+
+    current_fingerprint = fingerprint_programs(programs)
+
+    print(f"Kanal: {len(channels)}")
+    print(f"Program: {count}")
+
+    # Eğer tarih tıklaması AJAX'ı henüz tamamlamadıysa tekrar dene.
+    if (
+        day_index > 0
+        and previous_fingerprint
+        and current_fingerprint == previous_fingerprint
+    ):
+        print("Program listesi değişmedi, tekrar bekleniyor...")
+
+        page.wait_for_timeout(4000)
+
+        channels, programs = extract_dom_data(page)
+
+        count = sum(
+            len(value)
+            for value in programs.values()
+        )
+
+        current_fingerprint = fingerprint_programs(programs)
+
+        print(f"Tekrar kontrol: {count} program")
+
+    return (
+        channels,
+        programs,
+        current_fingerprint,
+    )
+
+
+def xmltv_time(dt):
+    """
+    XMLTV timezone formatı:
+    20260903000000 +0300
+    """
+
+    return dt.strftime("%Y%m%d%H%M%S %z")
+
+
+def safe_xml_text(text):
+    return clean_text(text)
+
+
+def build_xml(all_channels, all_programs):
+    tv = Element(
         "tv",
         {
-            "generator-info-name": "Tivibu 7 Günlük EPG",
-            "generator-info-url": LIVE_TV_URL,
+            "generator-info-name": "Tivibu EPG",
+            "generator-info-url": "https://www.tivibu.com.tr/",
         },
     )
 
-    # --------------------------------------------------------
+    # -----------------------------------------
     # CHANNEL
-    # --------------------------------------------------------
+    # -----------------------------------------
+    for channel_name in all_channels:
+        if not channel_name:
+            continue
 
-    for channel in channels:
+        if channel_name in CHANNEL_EXCLUDE:
+            continue
 
-        element = ET.SubElement(
+        channel_id = (
+            re.sub(
+                r"[^a-zA-Z0-9]+",
+                "_",
+                channel_name.lower(),
+            )
+            .strip("_")
+        )
+
+        channel = SubElement(
             tv,
             "channel",
             {
-                "id": channel["slug"],
+                "id": channel_id,
             },
         )
 
-        add_text_element(
-            element,
+        display = SubElement(
+            channel,
             "display-name",
-            channel["name"],
-            "tr",
-        )
-
-    # --------------------------------------------------------
-    # PROGRAM
-    # --------------------------------------------------------
-
-    programs_sorted = sorted(
-        programs,
-        key=lambda x: (
-            x["channel"],
-            x["start"],
-            x["stop"],
-        ),
-    )
-
-    for program in programs_sorted:
-
-        element = ET.SubElement(
-            tv,
-            "programme",
             {
-                "start": xml_time(program["start"]),
-                "stop": xml_time(program["stop"]),
-                "channel": program["channel"],
+                "lang": "tr",
             },
         )
 
-        add_text_element(
-            element,
-            "title",
-            program["title"],
-            "tr",
+        display.text = safe_xml_text(channel_name)
+
+    # -----------------------------------------
+    # PROGRAM
+    # -----------------------------------------
+    for channel_name in all_channels:
+        channel_id = (
+            re.sub(
+                r"[^a-zA-Z0-9]+",
+                "_",
+                channel_name.lower(),
+            )
+            .strip("_")
         )
 
-    tree = ET.ElementTree(tv)
+        programs = all_programs.get(
+            channel_name,
+            [],
+        )
+
+        for program in programs:
+            programme = SubElement(
+                tv,
+                "programme",
+                {
+                    "channel": channel_id,
+                    "start": xmltv_time(program["start"]),
+                    "stop": xmltv_time(program["stop"]),
+                },
+            )
+
+            title = SubElement(
+                programme,
+                "title",
+                {
+                    "lang": "tr",
+                },
+            )
+
+            title.text = safe_xml_text(
+                program["title"]
+            )
+
+    tree = ElementTree(tv)
 
     try:
-        ET.indent(tree, space="  ")
-    except AttributeError:
+        import xml.etree.ElementTree as ET
+
+        ET.indent(
+            tree,
+            space="  ",
+        )
+    except Exception:
         pass
 
     tree.write(
-        output_file,
+        OUTPUT_FILE,
         encoding="utf-8",
         xml_declaration=True,
     )
 
 
-# ============================================================
-# XML DOĞRULAMA
-# ============================================================
-
-def validate_xml(channels, programs):
-    """
-    Yanlış XML oluşturmayı engeller.
-    """
-
-    if not channels:
-        raise RuntimeError(
-            "Hiç gerçek Tivibu kanalı bulunamadı."
-        )
-
-    if not programs:
-        raise RuntimeError(
-            "Hiç program bulunamadı. Boş EPG oluşturulmayacak."
-        )
-
-    channel_ids = {
-        channel["slug"]
-        for channel in channels
-    }
-
-    invalid = []
-
-    for program in programs:
-
-        if program["channel"] not in channel_ids:
-            invalid.append(program)
-
-    if invalid:
-
-        raise RuntimeError(
-            f"{len(invalid)} program tanımsız kanala bağlı."
-        )
-
-    # Program başlıklarının kanal olarak eklenmediğini kontrol et.
-    channel_names = {
-        normalize_text(channel["name"])
-        for channel in channels
-    }
-
-    for program in programs:
-
-        if normalize_text(program["title"]) in channel_names:
-            # Bazı Tivibu kanalları gerçekten aynı isimli program
-            # yayınlayabilir. Burada sadece açıkça navigasyon
-            # başlıklarını reddediyoruz.
-            pass
-
-    return True
-
-
-# ============================================================
-# İSTATİSTİK
-# ============================================================
-
-def print_program_stats(channels, programs):
-
-    channel_count = {}
-
-    for program in programs:
-
-        channel_count.setdefault(
-            program["channel_name"],
-            0,
-        )
-
-        channel_count[program["channel_name"]] += 1
-
-    print()
-    print("-" * 70)
-    print("PROGRAM İSTATİSTİĞİ")
-    print("-" * 70)
-
-    for channel in channels:
-
-        count = channel_count.get(
-            channel["name"],
-            0,
-        )
-
-        if count:
-            print(
-                f"    {channel['name']}: {count}"
-            )
-
-
-# ============================================================
-# MAIN
-# ============================================================
-
 def main():
+    now = datetime.now(TIMEZONE)
 
+    target_days = [
+        (now.date() + timedelta(days=i))
+        for i in range(7)
+    ]
+
+    print()
     print("=" * 70)
-    print("TİVİBU 7 GÜNLÜK EPG")
+    print("TIVIBU 7 GÜNLÜK EPG")
     print("=" * 70)
-    print()
-
-    # --------------------------------------------------------
-    # ANA SAYFA
-    # --------------------------------------------------------
-
-    print("[1] Tivibu canlı TV sayfası alınıyor...")
-
-    try:
-        main_page = http_get(LIVE_TV_URL)
-
-    except Exception as exc:
-
-        print()
-        print("HATA: Tivibu sayfası alınamadı.")
-        print(str(exc))
-
-        sys.exit(1)
-
     print(
-        f"    Sayfa uzunluğu: {len(main_page):,}"
-        .replace(",", ".")
+        "Başlangıç:",
+        now.strftime("%d.%m.%Y %H:%M:%S"),
     )
-
-    # --------------------------------------------------------
-    # TARİHLER
-    # --------------------------------------------------------
-
-    print()
-    print("[2] Tivibu tarihleri:")
-
-    tivibu_dates = find_tivibu_dates(main_page)
-
-    for dt in tivibu_dates:
-
-        print(
-            f"    {dt.strftime('%d.%m.%Y')} -> "
-            f"{format_tivibu_date(dt)} / "
-            f"{format_tivibu_date(dt, end=True)}"
-        )
-
-    target_dates = get_target_dates(main_page)
-
-    print()
-    print("[3] Hedef 7 gün:")
-
-    for index, dt in enumerate(target_dates, 1):
-
-        print(
-            f"    {index}. "
-            f"{dt.strftime('%d.%m.%Y')} -> "
-            f"{format_tivibu_date(dt)} / "
-            f"{format_tivibu_date(dt, end=True)}"
-        )
-
-    # --------------------------------------------------------
-    # KANALLAR
-    # --------------------------------------------------------
-
-    print()
-    print("[3] Gerçek Tivibu kanalları çıkarılıyor...")
-
-    channels = extract_channel_links(main_page)
-
-    if not channels:
-
-        print("    Kanal bulunamadı.")
-
-        sys.exit(1)
-
     print(
-        f"    Gerçek kanal sayısı: {len(channels)}"
+        "Dönem:",
+        target_days[0].strftime("%d.%m.%Y"),
+        "->",
+        target_days[-1].strftime("%d.%m.%Y"),
     )
+    print("=" * 70)
 
-    for channel in channels:
-
-        print(
-            f"      + {channel['name']}"
-        )
-
-    # --------------------------------------------------------
-    # EPG
-    # --------------------------------------------------------
-
-    print()
-    print("[4] 7 günlük EPG çekiliyor...")
-    print()
-
-    all_programs = []
+    all_channels = []
+    all_programs = {}
 
     successful_days = 0
     failed_days = 0
 
-    processed_day_keys = set()
+    previous_fingerprint = None
 
-    for index, day in enumerate(target_dates, 1):
-
-        print("-" * 70)
-        print(
-            f"GÜN {index}/{len(target_dates)}"
-        )
-        print(
-            f"GÜN: {day.strftime('%d.%m.%Y')}"
-        )
-
-        day_key = day.strftime("%Y-%m-%d")
-
-        if day_key in processed_day_keys:
-            continue
-
-        processed_day_keys.add(day_key)
-
-        page = None
-
-        # ----------------------------------------------------
-        # 1. Ana sayfadan dene
-        # ----------------------------------------------------
-
-        try:
-
-            page = http_get(LIVE_TV_URL)
-
-        except Exception:
-            page = None
-
-        day_programs = []
-
-        if page:
-
-            try:
-
-                day_programs = collect_from_html(
-                    page,
-                    channels,
-                    day,
-                )
-
-            except Exception as exc:
-
-                print(
-                    f"    HTML parse hatası: {exc}"
-                )
-
-        # ----------------------------------------------------
-        # 2. Sonuç yoksa tarih URL'lerini dene
-        # ----------------------------------------------------
-
-        if not day_programs:
-
-            for url in build_date_urls(day)[1:]:
-
-                try:
-
-                    print(
-                        "    Tarih sayfası deneniyor: "
-                        + url
-                    )
-
-                    test_page = http_get(url)
-
-                    if not test_page:
-                        continue
-
-                    candidate = collect_from_html(
-                        test_page,
-                        channels,
-                        day,
-                    )
-
-                    if candidate:
-
-                        page = test_page
-                        day_programs = candidate
-
-                        break
-
-                except Exception:
-                    continue
-
-                time.sleep(REQUEST_DELAY)
-
-        # ----------------------------------------------------
-        # SONUÇ
-        # ----------------------------------------------------
-
-        if day_programs:
-
-            successful_days += 1
-
-            all_programs.extend(day_programs)
-
-            print(
-                f"    Program sayısı: "
-                f"{len(day_programs)}"
-            )
-
-        else:
-
-            failed_days += 1
-
-            print(
-                "    Bu gün için program bulunamadı."
-            )
-
-        time.sleep(REQUEST_DELAY)
-
-    # --------------------------------------------------------
-    # DEDUPE
-    # --------------------------------------------------------
-
-    unique_programs = {}
-
-    for program in all_programs:
-
-        key = (
-            program["channel"],
-            program["start"],
-            program["stop"],
-            normalize_text(program["title"]),
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ],
         )
 
-        unique_programs[key] = program
+        context = browser.new_context(
+            locale="tr-TR",
+            timezone_id="Europe/Istanbul",
+            viewport={
+                "width": 1920,
+                "height": 1080,
+            },
+            user_agent=(
+                "Mozilla/5.0 (X11; Linux x86_64) "
+                "AppleWebKit/537.36 "
+                "(KHTML, like Gecko) "
+                "Chrome/140.0.0.0 Safari/537.36"
+            ),
+        )
 
-    all_programs = list(
-        unique_programs.values()
-    )
-
-    # --------------------------------------------------------
-    # PROGRAM SINIRLAMA
-    # --------------------------------------------------------
-
-    # Yalnızca hedef 7 günlük pencereye yakın programları tut.
-    #
-    # Gece yarısını aşan programlar için bir gün tolerans bırakılır.
-
-    first_day = target_dates[0]
-    last_day = target_dates[-1] + timedelta(days=1)
-
-    filtered_programs = []
-
-    for program in all_programs:
-
-        start = program["start"]
-        stop = program["stop"]
-
-        if stop <= first_day:
-            continue
-
-        if start >= last_day:
-            continue
-
-        filtered_programs.append(program)
-
-    all_programs = filtered_programs
-
-    # --------------------------------------------------------
-    # SONUÇ
-    # --------------------------------------------------------
-
-    print()
-    print("=" * 70)
-    print("EPG TOPLAMA SONUCU")
-    print("=" * 70)
-
-    print(
-        f"Başarılı gün : {successful_days}/7"
-    )
-
-    print(
-        f"Hatalı gün   : {failed_days}/7"
-    )
-
-    print(
-        f"Kanal        : {len(channels)}"
-    )
-
-    print(
-        f"Program      : {len(all_programs)}"
-    )
-
-    # --------------------------------------------------------
-    # KRİTİK KONTROL
-    # --------------------------------------------------------
-
-    if not all_programs:
+        page = context.new_page()
 
         print()
-        print(
-            "HATA: Hiç program alınamadı."
+        print("Tivibu açılıyor...")
+
+        page.goto(
+            TIVIBU_URL,
+            wait_until="domcontentloaded",
+            timeout=60000,
         )
 
-        print(
-            "Yanlış/boş XML oluşturulmayacak."
+        try:
+            page.wait_for_load_state(
+                "networkidle",
+                timeout=15000,
+            )
+        except PlaywrightTimeoutError:
+            pass
+
+        page.wait_for_timeout(3000)
+
+        dismiss_cookie_popup(page)
+
+        # Kanal bağlantılarının gelmesini bekle
+        try:
+            page.wait_for_selector(
+                'a[href*="/kanallar/"]',
+                timeout=30000,
+            )
+        except PlaywrightTimeoutError:
+            print(
+                "UYARI: Kanal bağlantıları beklenen sürede gelmedi."
+            )
+
+        page.wait_for_timeout(3000)
+
+        # -----------------------------------------
+        # 7 GÜN
+        # -----------------------------------------
+        for index, target_day in enumerate(target_days):
+            try:
+                (
+                    channels,
+                    day_programs,
+                    current_fingerprint,
+                ) = get_day_schedule(
+                    page,
+                    target_day,
+                    index,
+                    previous_fingerprint,
+                )
+
+                if not all_channels:
+                    all_channels = list(channels)
+
+                else:
+                    for channel in channels:
+                        if channel not in all_channels:
+                            all_channels.append(channel)
+
+                # Günün başlangıç/bitişi
+                day_start = datetime(
+                    target_day.year,
+                    target_day.month,
+                    target_day.day,
+                    0,
+                    0,
+                    tzinfo=TIMEZONE,
+                )
+
+                day_end = day_start + timedelta(days=1)
+
+                day_count = 0
+
+                for channel_name, raw_programs in day_programs.items():
+                    absolute_programs = build_absolute_programs(
+                        raw_programs,
+                        target_day,
+                    )
+
+                    for program in absolute_programs:
+                        # Sadece bu güne temas eden programları al.
+                        if (
+                            program["stop"] <= day_start
+                            or program["start"] >= day_end
+                        ):
+                            continue
+
+                        if channel_name not in all_programs:
+                            all_programs[channel_name] = []
+
+                        # Aynı programı tekrar ekleme
+                        duplicate = False
+
+                        for existing in all_programs[channel_name]:
+                            if (
+                                existing["title"]
+                                == program["title"]
+                                and existing["start"]
+                                == program["start"]
+                                and existing["stop"]
+                                == program["stop"]
+                            ):
+                                duplicate = True
+                                break
+
+                        if not duplicate:
+                            all_programs[channel_name].append(
+                                program
+                            )
+                            day_count += 1
+
+                if day_count > 0:
+                    successful_days += 1
+                    print(
+                        f"BAŞARILI: "
+                        f"{target_day.strftime('%d.%m.%Y')} "
+                        f"-> {day_count} program"
+                    )
+                else:
+                    failed_days += 1
+                    print(
+                        f"HATA: "
+                        f"{target_day.strftime('%d.%m.%Y')} "
+                        f"-> 0 program"
+                    )
+
+                previous_fingerprint = current_fingerprint
+
+            except Exception as exc:
+                failed_days += 1
+
+                print(
+                    f"HATA: "
+                    f"{target_day.strftime('%d.%m.%Y')}"
+                )
+
+                print(
+                    "Detay:",
+                    repr(exc),
+                )
+
+        browser.close()
+
+    # Programları zamana göre sırala
+    for channel_name in all_programs:
+        all_programs[channel_name].sort(
+            key=lambda x: x["start"]
         )
 
+    total_programs = sum(
+        len(value)
+        for value in all_programs.values()
+    )
+
+    # -----------------------------------------
+    # SONUÇ
+    # -----------------------------------------
+    print()
+    print("=" * 70)
+    print("SONUÇ")
+    print("=" * 70)
+    print(
+        f"Başarılı gün: {successful_days}/7"
+    )
+    print(
+        f"Başarısız gün: {failed_days}/7"
+    )
+    print(
+        f"Kanal: {len(all_channels)}"
+    )
+    print(
+        f"Toplam program: {total_programs}"
+    )
+    print("=" * 70)
+
+    if total_programs == 0:
         raise RuntimeError(
-            "Hiç program alınamadı."
+            "Hiç program alınamadı. Tivibu sayfasının DOM yapısı değişmiş olabilir."
         )
 
-    # --------------------------------------------------------
-    # XML
-    # --------------------------------------------------------
-
-    validate_xml(
-        channels,
-        all_programs,
-    )
-
-    write_xml(
-        channels,
-        all_programs,
-        OUTPUT_FILE,
-    )
-
-    # --------------------------------------------------------
-    # İSTATİSTİK
-    # --------------------------------------------------------
-
-    print_program_stats(
-        channels,
+    # En azından 1 kanal ve program varsa XML üret.
+    build_xml(
+        all_channels,
         all_programs,
     )
 
     print()
-    print("=" * 70)
-    print("TAMAMLANDI")
-    print("=" * 70)
-
     print(
-        f"XML: {OUTPUT_FILE}"
+        f"EPG oluşturuldu: {OUTPUT_FILE}"
     )
 
-    print(
-        f"Kanallar: {len(channels)}"
-    )
+    # İlk birkaç kanalı ve programı göster
+    print()
+    print("ÖRNEK PROGRAMLAR:")
 
-    print(
-        f"Programlar: {len(all_programs)}"
-    )
+    shown = 0
 
-    print(
-        "Tivibu EPG hazır."
-    )
+    for channel_name in all_channels:
+        programs = all_programs.get(
+            channel_name,
+            [],
+        )
+
+        for program in programs[:2]:
+            print(
+                f"{channel_name} | "
+                f"{program['start'].strftime('%d.%m %H:%M')} - "
+                f"{program['stop'].strftime('%d.%m %H:%M')} | "
+                f"{program['title']}"
+            )
+
+            shown += 1
+
+            if shown >= 10:
+                break
+
+        if shown >= 10:
+            break
 
 
 if __name__ == "__main__":
-
-    try:
-        main()
-
-    except KeyboardInterrupt:
-
-        print()
-        print("İşlem kullanıcı tarafından durduruldu.")
-        sys.exit(130)
-
-    except Exception as exc:
-
-        print()
-        print("HATA:")
-        print(str(exc))
-
-        sys.exit(1)
+    main()
