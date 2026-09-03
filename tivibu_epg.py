@@ -27,6 +27,10 @@ USER_AGENT = (
 TURKEY_TZ = ZoneInfo("Europe/Istanbul")
 
 
+# ==============================================================
+# KATEGORİLER
+# ==============================================================
+
 CATEGORY_URLS = [
     f"{BASE_URL}/canli-tv",
     f"{BASE_URL}/canli-tv/ulusal",
@@ -44,7 +48,7 @@ CATEGORY_URLS = [
 
 
 # ==============================================================
-# TEMEL YARDIMCILAR
+# TEMEL FONKSİYONLAR
 # ==============================================================
 
 def clean_text(value):
@@ -181,7 +185,7 @@ def make_datetime(date_obj, hour, minute):
         date_obj.day,
         hour,
         minute,
-        tzinfo=TURKEY_TZ,
+        tzinfo=TURKEY_TZ
     )
 
 
@@ -193,7 +197,7 @@ def xml_datetime(dt):
 
 
 # ==============================================================
-# PROGRAM SATIRI
+# PROGRAM SATIRI PARSE
 # ==============================================================
 
 PROGRAM_RE = re.compile(
@@ -260,7 +264,7 @@ def parse_program_line(text, target_date):
 
 
 # ==============================================================
-# KANALLARI BUL
+# KANALLAR
 # ==============================================================
 
 def collect_channels(page):
@@ -294,15 +298,14 @@ def collect_channels(page):
             if href.startswith("/"):
                 href = BASE_URL + href
 
-            clean_url = (
-                href
-                .split("?", 1)[0]
-                .rstrip("/")
-            )
+            href = href.split(
+                "?",
+                1
+            )[0].rstrip("/")
 
             if not re.search(
                 r"/kanallar/[^/?#]+$",
-                clean_url
+                href
             ):
                 continue
 
@@ -310,14 +313,13 @@ def collect_channels(page):
                 name
             )
 
-            if key in channels:
-                continue
+            if key not in channels:
 
-            channels[key] = {
-                "name": name,
-                "url": clean_url,
-                "id": make_xml_id(name),
-            }
+                channels[key] = {
+                    "name": name,
+                    "url": href,
+                    "id": make_xml_id(name),
+                }
 
         except Exception:
             continue
@@ -325,13 +327,18 @@ def collect_channels(page):
     return channels
 
 
+# ==============================================================
+# KANAL URL HARİTASI
+# ==============================================================
+
 def build_channel_url_map(channels):
+
     result = {}
 
     for channel in channels.values():
 
         result[
-            channel["url"].lower().rstrip("/")
+            channel["url"].rstrip("/").lower()
         ] = channel
 
     return result
@@ -342,6 +349,7 @@ def build_channel_url_map(channels):
 # ==============================================================
 
 def collect_program_links(page):
+
     result = []
 
     locator = page.locator(
@@ -397,11 +405,16 @@ def collect_program_links(page):
     return result
 
 
+# ==============================================================
+# PROGRAMLAR
+# ==============================================================
+
 def extract_programs(
     page,
     target_date,
     channel_url_map
 ):
+
     programs = []
 
     links = collect_program_links(
@@ -430,7 +443,7 @@ def extract_programs(
         key = (
             channel["name"].upper(),
             parsed["start"],
-            parsed["title"].upper()
+            parsed["title"].upper(),
         )
 
         if key in seen:
@@ -456,7 +469,7 @@ def extract_programs(
 
 
 # ==============================================================
-# SAYFANIN MEVCUT PROGRAM İMZASI
+# PROGRAM İMZASI
 # ==============================================================
 
 def schedule_signature(page):
@@ -515,28 +528,181 @@ def schedule_signature(page):
 
 
 # ==============================================================
-# TARİH SEÇİM MEKANİZMASI
+# TARİH KONTROLLERİ
 # ==============================================================
 
-def find_date_candidates(page):
+def find_visible_date_elements(
+    page,
+    target_date
+):
+
+    targets = {
+        target_date.strftime(
+            "%d.%m.%Y"
+        ),
+        target_date.strftime(
+            "%d/%m/%Y"
+        ),
+        target_date.strftime(
+            "%Y-%m-%d"
+        ),
+        target_date.strftime(
+            "%d.%m"
+        ),
+        str(target_date.day),
+    }
+
+    result = []
+
+    locator = page.locator(
+        "button, a, [role='button'], option"
+    )
+
+    count = locator.count()
+
+    for i in range(count):
+
+        try:
+
+            element = locator.nth(i)
+
+            text = clean_text(
+                element.inner_text()
+            )
+
+            value = (
+                element.get_attribute(
+                    "value"
+                )
+                or ""
+            )
+
+            data_date = (
+                element.get_attribute(
+                    "data-date"
+                )
+                or ""
+            )
+
+            data_value = (
+                element.get_attribute(
+                    "data-value"
+                )
+                or ""
+            )
+
+            aria = (
+                element.get_attribute(
+                    "aria-label"
+                )
+                or ""
+            )
+
+            fields = {
+                text,
+                value,
+                data_date,
+                data_value,
+                aria,
+            }
+
+            if any(
+                target in fields
+                for target in targets
+                if target
+            ):
+
+                if element.is_visible():
+
+                    result.append(
+                        element
+                    )
+
+        except Exception:
+            continue
+
+    return result
+
+
+def click_date(
+    page,
+    target_date
+):
+
+    before = schedule_signature(
+        page
+    )
+
+    candidates = (
+        find_visible_date_elements(
+            page,
+            target_date
+        )
+    )
+
+    # ----------------------------------------------------------
+    # A) Direkt tarih
+    # ----------------------------------------------------------
+
+    for element in candidates:
+
+        try:
+
+            element.scroll_into_view_if_needed(
+                timeout=2000
+            )
+
+            element.click(
+                force=True,
+                timeout=3000
+            )
+
+            for _ in range(16):
+
+                time.sleep(
+                    0.25
+                )
+
+                after = schedule_signature(
+                    page
+                )
+
+                if (
+                    after
+                    and after != before
+                ):
+                    return True
+
+        except Exception:
+            continue
+
+    # ----------------------------------------------------------
+    # B) JS ile tarih arama
+    # ----------------------------------------------------------
+
+    full = target_date.strftime(
+        "%d.%m.%Y"
+    )
+
+    iso = target_date.strftime(
+        "%Y-%m-%d"
+    )
+
+    short = target_date.strftime(
+        "%d.%m"
+    )
 
     try:
 
-        return page.evaluate(
+        clicked = page.evaluate(
             """
-            () => {
+            args => {
 
-                const result = [];
-
-                const elements = [
-                    ...document.querySelectorAll(
-                        "button"
-                    ),
+                const all = [
+                    ...document.querySelectorAll("button"),
+                    ...document.querySelectorAll("a"),
                     ...document.querySelectorAll(
                         "[role='button']"
-                    ),
-                    ...document.querySelectorAll(
-                        "a"
                     ),
                     ...document.querySelectorAll(
                         "[data-date]"
@@ -549,7 +715,7 @@ def find_date_candidates(page):
                     )
                 ];
 
-                for (const el of elements) {
+                for (const el of all) {
 
                     const text =
                         (el.innerText ||
@@ -558,380 +724,43 @@ def find_date_candidates(page):
                         .replace(/\\s+/g, " ")
                         .trim();
 
-                    const dataDate =
+                    const attrs = [
                         el.getAttribute(
                             "data-date"
-                        );
-
-                    const dataValue =
+                        ),
                         el.getAttribute(
                             "data-value"
-                        );
-
-                    const value =
+                        ),
                         el.getAttribute(
                             "value"
-                        );
-
-                    const aria =
+                        ),
                         el.getAttribute(
                             "aria-label"
-                        );
-
-                    result.push({
-                        text: text,
-                        dataDate: dataDate || "",
-                        dataValue: dataValue || "",
-                        value: value || "",
-                        aria: aria || "",
-                        tag: el.tagName
-                    });
-                }
-
-                return result;
-            }
-            """
-        )
-
-    except Exception:
-        return []
-
-
-def click_date(
-    page,
-    target_date
-):
-
-    target_full = target_date.strftime(
-        "%d.%m.%Y"
-    )
-
-    target_short = target_date.strftime(
-        "%d.%m"
-    )
-
-    target_iso = target_date.strftime(
-        "%Y-%m-%d"
-    )
-
-    target_day = target_date.strftime(
-        "%d"
-    )
-
-    target_month = target_date.strftime(
-        "%m"
-    )
-
-    before = schedule_signature(
-        page
-    )
-
-    candidates = find_date_candidates(
-        page
-    )
-
-    # ----------------------------------------------------------
-    # Öncelik: tam tarih eşleşmesi
-    # ----------------------------------------------------------
-
-    for candidate in candidates:
-
-        fields = [
-            candidate.get("text", ""),
-            candidate.get("dataDate", ""),
-            candidate.get("dataValue", ""),
-            candidate.get("value", ""),
-            candidate.get("aria", ""),
-        ]
-
-        if any(
-            value in (
-                target_full,
-                target_iso
-            )
-            for value in fields
-            if value
-        ):
-
-            try:
-
-                result = page.evaluate(
-                    """
-                    target => {
-
-                        const elements = [
-                            ...document.querySelectorAll(
-                                "button"
-                            ),
-                            ...document.querySelectorAll(
-                                "[role='button']"
-                            ),
-                            ...document.querySelectorAll(
-                                "a"
-                            ),
-                            ...document.querySelectorAll(
-                                "[data-date]"
-                            ),
-                            ...document.querySelectorAll(
-                                "[data-value]"
-                            ),
-                            ...document.querySelectorAll(
-                                "option"
-                            )
-                        ];
-
-                        for (const el of elements) {
-
-                            const text =
-                                (el.innerText ||
-                                 el.textContent ||
-                                 "")
-                                .replace(/\\s+/g, " ")
-                                .trim();
-
-                            const attrs = [
-                                el.getAttribute(
-                                    "data-date"
-                                ),
-                                el.getAttribute(
-                                    "data-value"
-                                ),
-                                el.getAttribute(
-                                    "value"
-                                ),
-                                el.getAttribute(
-                                    "aria-label"
-                                )
-                            ];
-
-                            if (
-                                text === target ||
-                                attrs.includes(target)
-                            ) {
-
-                                el.scrollIntoView({
-                                    block: "center"
-                                });
-
-                                el.click();
-
-                                return true;
-                            }
-                        }
-
-                        return false;
-                    }
-                    """,
-                    target_full
-                )
-
-                if result:
-                    break
-
-            except Exception:
-                continue
-
-    # ----------------------------------------------------------
-    # Native SELECT
-    # ----------------------------------------------------------
-
-    if not candidates:
-
-        try:
-
-            selects = page.locator(
-                "select"
-            )
-
-            for i in range(
-                selects.count()
-            ):
-
-                select = selects.nth(i)
-
-                option_count = select.locator(
-                    "option"
-                ).count()
-
-                for j in range(
-                    option_count
-                ):
-
-                    option = select.locator(
-                        "option"
-                    ).nth(j)
-
-                    text = clean_text(
-                        option.inner_text()
-                    )
-
-                    value = (
-                        option.get_attribute(
-                            "value"
-                        )
-                        or ""
-                    )
-
-                    if (
-                        target_full in text
-                        or target_iso in text
-                        or target_full == value
-                        or target_iso == value
-                    ):
-
-                        select.select_option(
-                            value=value
-                        )
-
-                        break
-
-        except Exception:
-            pass
-
-    # ----------------------------------------------------------
-    # Eğer görünür tarih sadece gün adı / gün sayısı ise
-    # 04, 05, 06... üzerinden kontrollü deneme.
-    # ----------------------------------------------------------
-
-    if not candidates:
-
-        try:
-
-            result = page.evaluate(
-                """
-                args => {
-
-                    const elements = [
-                        ...document.querySelectorAll(
-                            "button"
-                        ),
-                        ...document.querySelectorAll(
-                            "[role='button']"
-                        ),
-                        ...document.querySelectorAll(
-                            "a"
                         )
                     ];
 
-                    for (const el of elements) {
-
-                        const text =
-                            (el.innerText || "")
-                            .replace(/\\s+/g, " ")
-                            .trim();
-
-                        if (
-                            text === args.day
-                            ||
-                            text === args.dayNoZero
-                        ) {
-
-                            el.scrollIntoView({
-                                block: "center"
-                            });
-
-                            el.click();
-
-                            return true;
-                        }
-                    }
-
-                    return false;
-                }
-                """,
-                {
-                    "day": target_day,
-                    "dayNoZero": str(
-                        int(target_day)
-                    )
-                }
-            )
-
-        except Exception:
-            result = False
-
-    # ----------------------------------------------------------
-    # Değişikliği bekle
-    # ----------------------------------------------------------
-
-    if result is not False:
-
-        for _ in range(20):
-
-            time.sleep(
-                0.25
-            )
-
-            after = schedule_signature(
-                page
-            )
-
-            if (
-                after
-                and after != before
-            ):
-                return True
-
-    # ----------------------------------------------------------
-    # Son fallback:
-    # page'de datepicker kullanan elementleri tarayıp
-    # custom JS event oluştur.
-    # ----------------------------------------------------------
-
-    try:
-
-        changed = page.evaluate(
-            """
-            args => {
-
-                const all = [
-                    ...document.querySelectorAll("*")
-                ];
-
-                for (const el of all) {
-
-                    const text =
-                        (el.innerText || "")
-                        .replace(/\\s+/g, " ")
-                        .trim();
-
-                    const attributes = [
-                        el.getAttribute("data-date"),
-                        el.getAttribute("data-day"),
-                        el.getAttribute("data-value"),
-                        el.getAttribute("value"),
-                        el.getAttribute("aria-label")
-                    ];
-
-                    const found =
-                        attributes.some(
-                            value =>
-                                value &&
-                                (
-                                    value.includes(
-                                        args.full
-                                    )
-                                    ||
-                                    value.includes(
-                                        args.iso
-                                    )
-                                )
+                    const matches =
+                        text === args.full
+                        ||
+                        text === args.iso
+                        ||
+                        text === args.short
+                        ||
+                        attrs.includes(
+                            args.full
                         )
                         ||
-                        text === args.full;
-
-                    if (found) {
-
-                        el.dispatchEvent(
-                            new MouseEvent(
-                                "click",
-                                {
-                                    bubbles: true,
-                                    cancelable: true,
-                                    view: window
-                                }
-                            )
+                        attrs.includes(
+                            args.iso
                         );
+
+                    if (matches) {
+
+                        el.scrollIntoView({
+                            block: "center"
+                        });
+
+                        el.click();
 
                         return true;
                     }
@@ -941,14 +770,15 @@ def click_date(
             }
             """,
             {
-                "full": target_full,
-                "iso": target_iso
+                "full": full,
+                "iso": iso,
+                "short": short
             }
         )
 
-        if changed:
+        if clicked:
 
-            for _ in range(20):
+            for _ in range(16):
 
                 time.sleep(
                     0.25
@@ -971,10 +801,10 @@ def click_date(
 
 
 # ==============================================================
-# SAYFA YENİDEN AÇMA
+# SAYFAYI AÇ
 # ==============================================================
 
-def reload_page(
+def open_page(
     page,
     url
 ):
@@ -988,11 +818,9 @@ def reload_page(
         )
 
     except PlaywrightTimeoutError:
-
         pass
 
     except Exception:
-
         pass
 
     page.wait_for_timeout(
@@ -1001,7 +829,7 @@ def reload_page(
 
 
 # ==============================================================
-# BİR KATEGORİDE 7 GÜN
+# TEK KATEGORİ - 7 GÜN
 # ==============================================================
 
 def scrape_category(
@@ -1017,7 +845,7 @@ def scrape_category(
     )
     print("=" * 70)
 
-    reload_page(
+    open_page(
         page,
         category_url
     )
@@ -1028,11 +856,7 @@ def scrape_category(
         )
     )
 
-    results = []
-
-    # ----------------------------------------------------------
-    # 7 GÜN
-    # ----------------------------------------------------------
+    result = []
 
     for day_index in range(
         DAYS
@@ -1052,11 +876,38 @@ def scrape_category(
         )
 
         # ------------------------------------------------------
-        # İlk gün:
-        # Sayfanın açılış akışını doğrudan al.
+        # HER GÜN İÇİN SAYFAYI TEMİZDEN AÇ
+        #
+        # Böylece önceki günün state'i kullanılmıyor.
+        # Tarih seçicinin sayfa üzerinde farklı şekilde
+        # render edilmesinden etkilenmiyoruz.
         # ------------------------------------------------------
 
-        if day_index == 0:
+        if day_index > 0:
+
+            open_page(
+                page,
+                category_url
+            )
+
+        # ------------------------------------------------------
+        # Önce doğrudan günü seçmeyi dene
+        # ------------------------------------------------------
+
+        selected = click_date(
+            page,
+            target_date
+        )
+
+        # ------------------------------------------------------
+        # İlk gün için tarih seçilemese bile sayfanın
+        # varsayılan gününü al.
+        # ------------------------------------------------------
+
+        if (
+            day_index == 0
+            and not selected
+        ):
 
             programs = extract_programs(
                 page,
@@ -1064,61 +915,27 @@ def scrape_category(
                 channel_url_map
             )
 
-            # İlk gün boşsa tarih seçimini dene.
-            if not programs:
-
-                print(
-                    "    İlk gün programı boş."
-                )
-
-                selected = click_date(
-                    page,
-                    target_date
-                )
-
-                if selected:
-
-                    programs = extract_programs(
-                        page,
-                        target_date,
-                        channel_url_map
-                    )
-
-        # ------------------------------------------------------
-        # Sonraki günler
-        # ------------------------------------------------------
-
         else:
 
-            selected = click_date(
-                page,
-                target_date
-            )
-
             if not selected:
 
                 print(
-                    "    Tarih seçimi başarısız, "
-                    "sayfa yeniden açılıyor."
+                    "    Tarih seçilemedi."
                 )
-
-                reload_page(
-                    page,
-                    category_url
-                )
-
-                selected = click_date(
-                    page,
-                    target_date
-                )
-
-            if not selected:
 
                 print(
                     "    GÜN ALINAMADI"
                 )
 
                 continue
+
+            # --------------------------------------------------
+            # Programların değişmesi için bekle
+            # --------------------------------------------------
+
+            page.wait_for_timeout(
+                800
+            )
 
             programs = extract_programs(
                 page,
@@ -1131,21 +948,20 @@ def scrape_category(
             f"{len(programs)}"
         )
 
-        results.extend(
+        result.extend(
             programs
         )
 
-    return results
+    return result
 
 
 # ==============================================================
-# DUPLICATE + END TIME
+# PROGRAMLARI TEMİZLE
 # ==============================================================
 
-def finalize_programs(programs):
+def deduplicate_programs(programs):
 
-    unique = []
-
+    result = []
     seen = set()
 
     for program in programs:
@@ -1157,7 +973,7 @@ def finalize_programs(programs):
             program["start"],
             normalize_key(
                 program["title"]
-            )
+            ),
         )
 
         if key in seen:
@@ -1165,13 +981,29 @@ def finalize_programs(programs):
 
         seen.add(key)
 
-        unique.append(
+        result.append(
             program
         )
 
+    result.sort(
+        key=lambda x: (
+            x["start"],
+            x["channel"]
+        )
+    )
+
+    return result
+
+
+# ==============================================================
+# PROGRAM BİTİŞLERİ
+# ==============================================================
+
+def fix_end_times(programs):
+
     grouped = defaultdict(list)
 
-    for program in unique:
+    for program in programs:
 
         grouped[
             normalize_key(
@@ -1183,7 +1015,7 @@ def finalize_programs(programs):
 
     result = []
 
-    for _, items in grouped.items():
+    for channel_key, items in grouped.items():
 
         items.sort(
             key=lambda x: x["start"]
@@ -1192,9 +1024,7 @@ def finalize_programs(programs):
         for i, program in enumerate(items):
 
             start = program["start"]
-            end = program.get(
-                "end"
-            )
+            end = program.get("end")
 
             if end is None:
 
@@ -1206,22 +1036,31 @@ def finalize_programs(programs):
 
                 else:
 
-                    end = start + timedelta(
-                        minutes=30
+                    end = (
+                        start
+                        + timedelta(
+                            minutes=30
+                        )
                     )
 
             if end <= start:
 
-                end = start + timedelta(
-                    minutes=30
+                end = (
+                    start
+                    + timedelta(
+                        minutes=30
+                    )
                 )
 
             if end - start > timedelta(
                 hours=12
             ):
 
-                end = start + timedelta(
-                    hours=3
+                end = (
+                    start
+                    + timedelta(
+                        hours=3
+                    )
                 )
 
             result.append({
@@ -1252,9 +1091,9 @@ def write_xml(
 
     used = {
         normalize_key(
-            program["channel"]
+            p["channel"]
         )
-        for program in programs
+        for p in programs
     }
 
     final_channels = []
@@ -1337,7 +1176,7 @@ def write_xml(
         if not channel_id:
             continue
 
-        element = SubElement(
+        programme = SubElement(
             tv,
             "programme",
             {
@@ -1352,7 +1191,7 @@ def write_xml(
         )
 
         title = SubElement(
-            element,
+            programme,
             "title",
             {
                 "lang": "tr"
@@ -1360,10 +1199,6 @@ def write_xml(
         )
 
         title.text = program["title"]
-
-    # ----------------------------------------------------------
-    # DOSYAYI YAZ
-    # ----------------------------------------------------------
 
     tree = ElementTree(
         tv
@@ -1427,9 +1262,9 @@ def main():
 
     print("=" * 70)
 
-    # ----------------------------------------------------------
-    # KANALLARI TEK SEFER AL
-    # ----------------------------------------------------------
+    # ==========================================================
+    # 158 KANALI TOPLA
+    # ==========================================================
 
     with sync_playwright() as p:
 
@@ -1439,6 +1274,63 @@ def main():
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-blink-features=AutomationControlled",
+            ]
+        )
+
+        context = browser.new_context(
+            user_agent=USER_AGENT,
+            locale="tr-TR",
+            timezone_id="Europe/Istanbul",
+            viewport={
+                "width": 1920,
+                "height": 1080,
+            }
+        )
+
+        page = context.new_page()
+
+        page.set_default_timeout(
+            10000
+        )
+
+        print(
+            "Kanal listesi alınıyor..."
+        )
+
+        open_page(
+            page,
+            LIVE_URL
+        )
+
+        channels = collect_channels(
+            page
+        )
+
+        browser.close()
+
+    print()
+    print(
+        f"Bulunan kanal: "
+        f"{len(channels)}"
+    )
+
+    # ==========================================================
+    # PROGRAMLARI AL
+    # ==============================================================
+
+    all_programs = []
+
+    # ----------------------------------------------------------
+    # ÖNCE ANA CANLI TV
+    # ----------------------------------------------------------
+
+    with sync_playwright() as p:
+
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
             ]
         )
 
@@ -1458,96 +1350,90 @@ def main():
             10000
         )
 
-        print(
-            "Kanal listesi alınıyor..."
-        )
-
-        reload_page(
+        programs = scrape_category(
             page,
-            LIVE_URL
+            LIVE_URL,
+            channels
         )
 
-        channels = collect_channels(
-            page
+        all_programs.extend(
+            programs
         )
 
         browser.close()
 
-    print()
-    print(
-        f"Bulunan kanal: "
-        f"{len(channels)}"
-    )
-
     # ----------------------------------------------------------
-    # BÜTÜN KATEGORİLER
+    # KATEGORİLER
     #
-    # SIRALI.
-    #
-    # Paralel yok.
-    # Tarihler karışmıyor.
+    # Ana sayfadan yeterli program alınamazsa
+    # kategoriler tamamlayıcı olarak taranır.
     # ----------------------------------------------------------
 
-    all_programs = []
+    if len(all_programs) < 500:
 
-    for category_url in CATEGORY_URLS:
+        for category_url in CATEGORY_URLS[1:]:
 
-        with sync_playwright() as p:
+            with sync_playwright() as p:
 
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-blink-features=AutomationControlled",
-                ]
-            )
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                    ]
+                )
 
-            context = browser.new_context(
-                user_agent=USER_AGENT,
-                locale="tr-TR",
-                timezone_id="Europe/Istanbul",
-                viewport={
-                    "width": 1920,
-                    "height": 1080
-                }
-            )
+                context = browser.new_context(
+                    user_agent=USER_AGENT,
+                    locale="tr-TR",
+                    timezone_id="Europe/Istanbul",
+                    viewport={
+                        "width": 1920,
+                        "height": 1080
+                    }
+                )
 
-            page = context.new_page()
+                page = context.new_page()
 
-            page.set_default_timeout(
-                10000
-            )
+                page.set_default_timeout(
+                    10000
+                )
 
-            programs = scrape_category(
-                page,
-                category_url,
-                channels
-            )
+                programs = scrape_category(
+                    page,
+                    category_url,
+                    channels
+                )
 
-            all_programs.extend(
-                programs
-            )
+                all_programs.extend(
+                    programs
+                )
 
-            browser.close()
+                browser.close()
 
-    # ----------------------------------------------------------
-    # PROGRAMLARI BİRLEŞTİR
-    # ----------------------------------------------------------
+    # ==========================================================
+    # TEMİZLE
+    # ==========================================================
 
-    all_programs = finalize_programs(
+    all_programs = deduplicate_programs(
         all_programs
     )
 
-    # ----------------------------------------------------------
-    # GÜN KONTROLÜ
-    # ----------------------------------------------------------
+    all_programs = fix_end_times(
+        all_programs
+    )
 
-    date_counts = defaultdict(int)
+    # ==========================================================
+    # GÜN KONTROLÜ
+    # ==========================================================
+
+    day_counts = defaultdict(
+        int
+    )
 
     for program in all_programs:
 
-        date_counts[
+        day_counts[
             program["start"].strftime(
                 "%d.%m.%Y"
             )
@@ -1573,21 +1459,12 @@ def main():
 
         print(
             f"{date}: "
-            f"{date_counts.get(date, 0)} program"
+            f"{day_counts.get(date, 0)} program"
         )
 
-    # ----------------------------------------------------------
-    # XML
-    # ----------------------------------------------------------
-
-    xml_channel_count = write_xml(
-        channels,
-        all_programs
-    )
-
-    # ----------------------------------------------------------
-    # KANAL SAYILARI
-    # ----------------------------------------------------------
+    # ==========================================================
+    # KANAL KONTROLÜ
+    # ==========================================================
 
     channel_counts = defaultdict(
         int
@@ -1601,12 +1478,35 @@ def main():
 
     print()
     print("=" * 70)
+    print("KANAL KONTROLÜ")
+    print("=" * 70)
+
+    for channel_name in sorted(
+        channel_counts
+    ):
+
+        print(
+            f"{channel_name}: "
+            f"{channel_counts[channel_name]}"
+        )
+
+    # ==========================================================
+    # XML
+    # ==============================================================
+
+    xml_channels = write_xml(
+        channels,
+        all_programs
+    )
+
+    print()
+    print("=" * 70)
     print("SONUÇ")
     print("=" * 70)
 
     print(
         f"XML kanal: "
-        f"{xml_channel_count}"
+        f"{xml_channels}"
     )
 
     print(
@@ -1614,23 +1514,9 @@ def main():
         f"{len(all_programs)}"
     )
 
-    print()
     print(
-        "KANAL PROGRAM SAYILARI:"
-    )
-
-    for channel_name in sorted(
-        channel_counts
-    ):
-
-        print(
-            f"  {channel_name}: "
-            f"{channel_counts[channel_name]}"
-        )
-
-    print()
-    print(
-        f"{OUTPUT_FILE} oluşturuldu."
+        f"Dosya: "
+        f"{OUTPUT_FILE}"
     )
 
     print("=" * 70)
