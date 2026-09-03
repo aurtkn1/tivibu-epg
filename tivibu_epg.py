@@ -2,17 +2,27 @@
 # -*- coding: utf-8 -*-
 
 import html
+import json
 import re
 import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
-
+from datetime import datetime, timedelta
 
 BASE_URL = "https://www.tivibu.com.tr"
 LIVE_TV_URL = f"{BASE_URL}/canli-tv"
-PREVUE_URL = f"{BASE_URL}/Channel/GetPrevueList"
+MULTI_PREVUE_URL = f"{BASE_URL}/Channel/GetMultiPrevueData"
+
+OUTPUT_FILE = "epg.xml"
+
+# Kaç günlük EPG üretilecek?
+DAYS = 7
+
+# İstekler arasında bekleme.
+REQUEST_DELAY = 0.50
+
+TIMEZONE = "+0300"
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -20,22 +30,24 @@ USER_AGENT = (
     "Chrome/151.0.0.0 Safari/537.36"
 )
 
-OUTPUT_FILE = "epg.xml"
 
-# İstekler arasında kısa bekleme.
-REQUEST_DELAY = 0.25
-
+# ---------------------------------------------------------------------
+# HTTP
+# ---------------------------------------------------------------------
 
 def http_request(url, data=None, headers=None):
     """
-    Tivibu'ya HTTP isteği gönderir.
+    GET veya POST HTTP isteği gönderir.
+    Cookie'leri aynı oturumda tutmak için CookieJar kullanılır.
     """
+
     request_headers = {
         "User-Agent": USER_AGENT,
         "Accept": "*/*",
         "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
         "Cache-Control": "no-cache",
         "Pragma": "no-cache",
+        "Connection": "keep-alive",
     }
 
     if headers:
@@ -49,20 +61,34 @@ def http_request(url, data=None, headers=None):
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=60) as response:
             raw = response.read()
-            charset = response.headers.get_content_charset() or "utf-8"
-            return raw.decode(charset, errors="replace")
+
+            charset = (
+                response.headers.get_content_charset()
+                or "utf-8"
+            )
+
+            return raw.decode(
+                charset,
+                errors="replace",
+            )
 
     except Exception as exc:
-        raise RuntimeError(f"HTTP isteği başarısız: {url}\n{exc}") from exc
+        raise RuntimeError(
+            f"HTTP isteği başarısız:\n"
+            f"URL: {url}\n"
+            f"Hata: {exc}"
+        ) from exc
 
+
+# ---------------------------------------------------------------------
+# Tivibu ana sayfa
+# ---------------------------------------------------------------------
 
 def get_main_page():
-    """
-    Tivibu canlı TV sayfasını alır.
-    """
-    print("[1/4] Tivibu canlı TV sayfası alınıyor...")
+    print("[1/5] Tivibu canlı TV sayfası alınıyor...")
+
     return http_request(
         LIVE_TV_URL,
         headers={
@@ -71,238 +97,522 @@ def get_main_page():
     )
 
 
+# ---------------------------------------------------------------------
+# CSRF TOKEN
+# ---------------------------------------------------------------------
+
 def extract_csrf_token(page):
     """
-    Sayfadaki CSRF form token'ını bulur.
-
-    Aranan alan:
-    CSRF-TOKEN-TVBUDNBX!-FORM
+    Tivibu sayfasındaki CSRF token'ı bulur.
     """
 
     patterns = [
-        # name="..." value="..."
         r'name=["\']CSRF-TOKEN-TVBUDNBX!-FORM["\'][^>]*value=["\']([^"\']+)["\']',
 
-        # value="..." name="..."
         r'value=["\']([^"\']+)["\'][^>]*name=["\']CSRF-TOKEN-TVBUDNBX!-FORM["\']',
 
-        # Tek tırnak / çift tırnak karışık durumlar
-        r'name=["\']CSRF-TOKEN-TVBUDNBX!-FORM["\'][^>]*value\s*=\s*["\']([^"\']+)["\']',
+        r'CSRF-TOKEN-TVBUDNBX!-FORM["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+
+        r'CSRF-TOKEN-TVBUDNBX!-FORM.{0,500}?value=["\']([^"\']+)["\']',
     ]
 
     for pattern in patterns:
-        match = re.search(pattern, page, re.IGNORECASE)
+
+        match = re.search(
+            pattern,
+            page,
+            re.IGNORECASE | re.DOTALL,
+        )
+
         if match:
-            token = html.unescape(match.group(1)).strip()
+
+            token = html.unescape(
+                match.group(1)
+            ).strip()
 
             if token:
                 return token
 
-    # Bazı sayfalarda token farklı HTML düzeninde bulunabiliyor.
-    generic_match = re.search(
-        r'CSRF-TOKEN-TVBUDNBX!-FORM.{0,500}?value=["\']([^"\']+)["\']',
-        page,
-        re.IGNORECASE | re.DOTALL,
-    )
-
-    if generic_match:
-        token = html.unescape(generic_match.group(1)).strip()
-
-        if token:
-            return token
-
     raise RuntimeError(
-        "CSRF token bulunamadı. "
-        "Tivibu sayfasındaki CSRF-TOKEN-TVBUDNBX!-FORM alanı değişmiş olabilir."
+        "CSRF token bulunamadı.\n"
+        "Tivibu HTML yapısını değiştirmiş olabilir."
     )
 
 
-def extract_channel_list(page):
+# ---------------------------------------------------------------------
+# Tarihler
+# ---------------------------------------------------------------------
+
+def extract_date_options(page):
     """
-    Tivibu canlı TV HTML'sinden kanal adı + channelCode listesini çıkarır.
+    Sayfadaki channelsDates tarihlerini çıkarır.
 
-    Örnek:
-        TİVİBU TANITIM -> ch00000000000000001358
+    Örnek HTML:
+
+    <a
+        class="active"
+        channeldatebegin="2026.09.03 00:00:00"
+        channeldateend="2026.09.03 23:59:59">
+        Bugün
+    </a>
     """
 
-    print("[2/4] Kanal listesi HTML'den çıkarılıyor...")
+    results = []
 
-    channels = []
-    seen = set()
-
-    # channelsTitle bloklarını buluyoruz.
-    title_pattern = re.compile(
-        r'<div\s+class=["\']channelsTitle["\'][^>]*>'
-        r'(.*?)'
-        r'</div>',
+    pattern = re.compile(
+        r'<a[^>]*'
+        r'channeldatebegin=["\']([^"\']+)["\'][^>]*'
+        r'channeldateend=["\']([^"\']+)["\'][^>]*'
+        r'>(.*?)</a>',
         re.IGNORECASE | re.DOTALL,
     )
 
-    title_blocks = title_pattern.findall(page)
+    for match in pattern.finditer(page):
 
-    for title_block in title_blocks:
-        # Kanal adı.
-        title_match = re.search(
-            r'<a[^>]*title=["\']([^"\']+)["\'][^>]*>'
-            r'(.*?)'
-            r'</a>',
-            title_block,
-            re.IGNORECASE | re.DOTALL,
-        )
-
-        if not title_match:
-            # title attribute bulunmazsa iç metni deneyelim.
-            title_match = re.search(
-                r'<a[^>]*>(.*?)</a>',
-                title_block,
-                re.IGNORECASE | re.DOTALL,
-            )
-
-            if not title_match:
-                continue
-
-            channel_name = re.sub(r"<[^>]+>", "", title_match.group(1))
-        else:
-            channel_name = title_match.group(1)
-
-        channel_name = html.unescape(
-            re.sub(r"\s+", " ", channel_name)
+        begin = html.unescape(
+            match.group(1)
         ).strip()
 
-        if not channel_name:
-            continue
+        end = html.unescape(
+            match.group(2)
+        ).strip()
 
-        # Aynı başlık bloğunun civarında channelCode bulmak için
-        # HTML içerisinde takip eden alanı arıyoruz.
-        # Önce bloğun bulunduğu noktayı sayfada tekrar buluyoruz.
-        block_index = page.find(title_block)
-
-        if block_index < 0:
-            continue
-
-        # Bir sonraki kanal başlığına kadar bak.
-        next_title = page.find(
-            '<div class="channelsTitle"',
-            block_index + len(title_block),
+        text = html.unescape(
+            re.sub(
+                r"<[^>]+>",
+                "",
+                match.group(3),
+            )
         )
 
-        if next_title < 0:
-            next_title = len(page)
+        text = re.sub(
+            r"\s+",
+            " ",
+            text,
+        ).strip()
 
-        nearby_html = page[block_index:next_title]
-
-        code_match = re.search(
-            r'ch\d{20,}',
-            nearby_html,
-            re.IGNORECASE,
-        )
-
-        if not code_match:
-            continue
-
-        channel_code = code_match.group(0)
-
-        if channel_code in seen:
-            continue
-
-        seen.add(channel_code)
-
-        channels.append(
+        results.append(
             {
-                "name": channel_name,
-                "code": channel_code,
+                "text": text,
+                "begin": begin,
+                "end": end,
             }
         )
 
-    # Yukarıdaki HTML bölme yöntemi bazı tekrarları kaçırırsa,
-    # doğrudan sayfadaki benzersiz channelCode'ları da tespit ediyoruz.
-    all_codes = []
-    for match in re.finditer(r'ch\d{20,}', page, re.IGNORECASE):
-        code = match.group(0)
+    # Aynı tarih tekrar bulunursa sil.
+    unique = []
 
-        if code not in all_codes:
-            all_codes.append(code)
+    seen = set()
 
-    # Bilinen eşleşmeler dışında kalan kodları da ekle.
-    known_codes = {x["code"] for x in channels}
+    for item in results:
 
-    for code in all_codes:
-        if code not in known_codes:
-            channels.append(
+        key = (
+            item["begin"],
+            item["end"],
+        )
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        unique.append(item)
+
+    return unique
+
+
+def parse_tivibu_date(value):
+    """
+    Tivibu tarih formatı:
+
+    2026.09.03 00:00:00
+    """
+
+    formats = [
+        "%Y.%m.%d %H:%M:%S",
+        "%d.%m.%Y %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+    ]
+
+    value = value.strip()
+
+    for fmt in formats:
+
+        try:
+            return datetime.strptime(
+                value,
+                fmt,
+            )
+
+        except ValueError:
+            pass
+
+    return None
+
+
+def build_target_dates(page):
+    """
+    Sayfadaki tarih listesinden sonraki 7 günü seçer.
+
+    Öncelik:
+    1. Bugün / ileri tarihler
+    2. Sayfada bulunan gerçek tarih aralıkları
+
+    Sayfa tarihleri yetmezse otomatik tarih üretir.
+    """
+
+    today = datetime.now().date()
+
+    page_dates = extract_date_options(page)
+
+    target = []
+
+    for item in page_dates:
+
+        dt = parse_tivibu_date(
+            item["begin"]
+        )
+
+        if not dt:
+            continue
+
+        day = dt.date()
+
+        if day < today:
+            continue
+
+        target.append(
+            {
+                "date": day,
+                "begin": item["begin"],
+                "end": item["end"],
+            }
+        )
+
+    # Tekilleştir
+    unique = {}
+
+    for item in target:
+        unique[item["date"]] = item
+
+    target = [
+        unique[d]
+        for d in sorted(unique)
+    ]
+
+    # Sayfada 7 gün yoksa üret.
+    if len(target) < DAYS:
+
+        print(
+            "      Sayfadaki tarih sayısı 7 günden az. "
+            "Eksik günler otomatik oluşturulacak."
+        )
+
+        existing_dates = {
+            item["date"]
+            for item in target
+        }
+
+        for offset in range(DAYS):
+
+            day = today + timedelta(
+                days=offset
+            )
+
+            if day in existing_dates:
+                continue
+
+            target.append(
                 {
-                    "name": code,
-                    "code": code,
+                    "date": day,
+                    "begin": day.strftime(
+                        "%Y.%m.%d 00:00:00"
+                    ),
+                    "end": day.strftime(
+                        "%Y.%m.%d 23:59:59"
+                    ),
                 }
             )
+
+        target.sort(
+            key=lambda x: x["date"]
+        )
+
+    return target[:DAYS]
+
+
+# ---------------------------------------------------------------------
+# channelColumnCode / search
+# ---------------------------------------------------------------------
+
+def extract_channel_column_code(page):
+    """
+    Tivibu'nun channelColumnCode değerini HTML/JS içinden yakalamaya çalışır.
+
+    Bulunamazsa boş string döndürür.
+
+    GetMultiPrevueData bazı sayfalarda boş değerle de çalışabilir.
+    """
+
+    patterns = [
+        r'channelColumnCode\s*=\s*["\']([^"\']*)["\']',
+
+        r'channelColumnCode\s*:\s*["\']([^"\']*)["\']',
+
+        r'channelColumnCode["\']?\s*,\s*["\']([^"\']+)["\']',
+
+        r'"channelColumnCode"\s*:\s*"([^"]*)"',
+    ]
+
+    for pattern in patterns:
+
+        matches = re.findall(
+            pattern,
+            page,
+            re.IGNORECASE,
+        )
+
+        for value in matches:
+
+            value = html.unescape(
+                value
+            ).strip()
+
+            if value:
+                return value
+
+    return ""
+
+
+def extract_channel_search_value(page):
+    """
+    channelSearchValue için başlangıç değeri.
+
+    Tivibu sayfasında sabit olarak tanımlıysa yakalar.
+    Bulamazsa boş string kullanılır.
+    """
+
+    patterns = [
+        r'channelSearchValue\s*=\s*["\']([^"\']*)["\']',
+
+        r'channelSearchValue\s*:\s*["\']([^"\']*)["\']',
+
+        r'"channelSearchValue"\s*:\s*"([^"]*)"',
+    ]
+
+    for pattern in patterns:
+
+        matches = re.findall(
+            pattern,
+            page,
+            re.IGNORECASE,
+        )
+
+        for value in matches:
+
+            value = html.unescape(
+                value
+            ).strip()
+
+            if value:
+                return value
+
+    return ""
+
+
+# ---------------------------------------------------------------------
+# GetMultiPrevueData
+# ---------------------------------------------------------------------
+
+def post_multi_prevue(
+    csrf_token,
+    channel_column_code,
+    channel_search_value,
+    begin_date,
+    end_date,
+    page_no=1,
+):
+    """
+    Tivibu'nun ana çoklu EPG endpoint'i.
+    """
+
+    form = {
+        "channelColumnCode": channel_column_code,
+
+        "channelDateBegin": begin_date,
+
+        "channelDateEnd": end_date,
+
+        "channelSearchValue": channel_search_value,
+
+        "pageNo": str(page_no),
+    }
+
+    body = urllib.parse.urlencode(
+        form
+    ).encode("utf-8")
+
+    headers = {
+        "Content-Type":
+            "application/x-www-form-urlencoded; charset=UTF-8",
+
+        "Origin":
+            BASE_URL,
+
+        "Referer":
+            LIVE_TV_URL,
+
+        "X-Requested-With":
+            "XMLHttpRequest",
+
+        "RequestVerificationToken":
+            csrf_token,
+
+        "Accept":
+            "application/json, text/javascript, */*; q=0.01",
+    }
+
+    response = http_request(
+        MULTI_PREVUE_URL,
+        data=body,
+        headers=headers,
+    )
+
+    try:
+        return json.loads(
+            response
+        )
+
+    except json.JSONDecodeError as exc:
+
+        raise RuntimeError(
+            "GetMultiPrevueData JSON döndürmedi.\n"
+            f"İlk 1000 karakter:\n"
+            f"{response[:1000]}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------
+# Yardımcı alanlar
+# ---------------------------------------------------------------------
+
+def clean_text(value):
+    if value is None:
+        return ""
+
+    value = html.unescape(
+        str(value)
+    )
+
+    value = re.sub(
+        r"\s+",
+        " ",
+        value,
+    )
+
+    return value.strip()
+
+
+def first_nonempty(item, keys):
+    for key in keys:
+
+        value = item.get(key)
+
+        if value is None:
+            continue
+
+        value = clean_text(value)
+
+        if value:
+            return value
+
+    return ""
+
+
+# ---------------------------------------------------------------------
+# Programları normalize et
+# ---------------------------------------------------------------------
+
+def normalize_channels(data):
+    """
+    channelListViewModel'den kanal sözlüğü çıkarır.
+    """
+
+    channels = {}
+
+    items = data.get(
+        "channelListViewModel"
+    ) or []
+
+    for item in items:
+
+        code = first_nonempty(
+            item,
+            [
+                "channelCode",
+                "code",
+            ],
+        )
+
+        if not code:
+            continue
+
+        name = first_nonempty(
+            item,
+            [
+                "channelName",
+                "name",
+                "displayName",
+            ],
+        )
+
+        if not name:
+            name = code
+
+        icon = first_nonempty(
+            item,
+            [
+                "channelImage",
+                "image",
+                "channelIcon",
+            ],
+        )
+
+        channels[code] = {
+            "name": name,
+            "icon": icon,
+        }
 
     return channels
 
 
-def post_prevue(channel_code, csrf_token):
+def normalize_programs(data):
     """
-    GetPrevueList endpoint'ine Tivibu'nun tarayıcıdaki POST isteğini gönderir.
-    """
-
-    form_data = urllib.parse.urlencode(
-        {
-            "channelCode": channel_code,
-            "CSRF-TOKEN-TVBUDNBX!-FORM": csrf_token,
-        }
-    ).encode("utf-8")
-
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "Origin": BASE_URL,
-        "Referer": LIVE_TV_URL,
-        "X-Requested-With": "XMLHttpRequest",
-        "RequestVerificationToken": csrf_token,
-        "Accept": "application/json, text/javascript, */*; q=0.01",
-    }
-
-    response = http_request(
-        PREVUE_URL,
-        data=form_data,
-        headers=headers,
-    )
-
-    return response
-
-
-def parse_programs(response_text):
-    """
-    GetPrevueList JSON yanıtından programları çıkarır.
+    prevueListViewModel içindeki programları çıkarır.
     """
 
-    import json
+    programs = data.get(
+        "prevueListViewModel"
+    ) or []
 
-    try:
-        data = json.loads(response_text)
-    except json.JSONDecodeError:
-        raise RuntimeError(
-            "GetPrevueList JSON döndürmedi.\n"
-            f"İlk 500 karakter:\n{response_text[:500]}"
-        )
-
-    programs = data.get("mobilPrevueListViewModel") or []
-
+    # Bazı response'larda farklı alan gelebilir.
     if not programs:
-        programs = data.get("prevueListViewModel") or []
+
+        programs = data.get(
+            "mobilPrevueViewModel"
+        ) or []
 
     return programs
 
 
+# ---------------------------------------------------------------------
+# Tarih parse
+# ---------------------------------------------------------------------
+
 def parse_datetime(value):
-    """
-    Tivibu tarih formatını datetime nesnesine çevirir.
-
-    Örnek:
-        2026.09.03 01:15:00
-    """
-
     if not value:
         return None
 
-    value = value.strip()
+    value = clean_text(value)
 
     formats = [
         "%Y.%m.%d %H:%M:%S",
@@ -311,127 +621,299 @@ def parse_datetime(value):
     ]
 
     for fmt in formats:
+
         try:
-            return datetime.strptime(value, fmt)
+            return datetime.strptime(
+                value,
+                fmt,
+            )
+
         except ValueError:
             pass
 
     return None
 
 
-def add_text(parent, tag, text):
-    """
-    XML içerisine metin ekler.
-    """
-    element = ET.SubElement(parent, tag)
-    element.text = text or ""
+# ---------------------------------------------------------------------
+# XMLTV
+# ---------------------------------------------------------------------
+
+def add_text(parent, tag, text, lang=None):
+
+    if lang:
+
+        element = ET.SubElement(
+            parent,
+            tag,
+            {
+                "lang": lang
+            },
+        )
+
+    else:
+
+        element = ET.SubElement(
+            parent,
+            tag,
+        )
+
+    element.text = clean_text(
+        text
+    )
+
     return element
 
 
-def create_xmltv(channels, channel_programs):
+def programme_key(program):
     """
-    XMLTV dosyasını oluşturur.
+    Aynı programın birden fazla tarih çağrısında
+    tekrar yazılmasını engeller.
     """
 
-    print("[4/4] XMLTV dosyası oluşturuluyor...")
+    code = first_nonempty(
+        program,
+        [
+            "channelCode",
+        ],
+    )
+
+    begin = first_nonempty(
+        program,
+        [
+            "beginTime",
+        ],
+    )
+
+    end = first_nonempty(
+        program,
+        [
+            "endTime",
+        ],
+    )
+
+    title = first_nonempty(
+        program,
+        [
+            "prevueName",
+            "name",
+        ],
+    )
+
+    return (
+        code,
+        begin,
+        end,
+        title,
+    )
+
+
+def create_xmltv(
+    channels,
+    programs,
+):
+    print("[5/5] XMLTV oluşturuluyor...")
 
     tv = ET.Element(
         "tv",
         {
-            "generator-info-name": "Tivibu EPG GitHub",
-            "generator-info-url": "https://www.tivibu.com.tr/canli-tv",
+            "generator-info-name":
+                "Tivibu 7 Günlük EPG",
+
+            "generator-info-url":
+                LIVE_TV_URL,
         },
     )
 
-    # Kanal bilgileri.
-    for channel in channels:
+    # -------------------------------------------------------------
+    # Channels
+    # -------------------------------------------------------------
+
+    for code in sorted(
+        channels.keys(),
+        key=lambda x: channels[x]["name"].lower(),
+    ):
+
+        info = channels[code]
+
         channel_element = ET.SubElement(
             tv,
             "channel",
             {
-                "id": channel["code"],
+                "id": code,
             },
         )
 
         add_text(
             channel_element,
             "display-name",
-            channel["name"],
+            info["name"],
+            "tr",
         )
 
-    # Programlar.
-    for channel in channels:
-        channel_code = channel["code"]
-        channel_name = channel["name"]
+        icon = info.get("icon")
 
-        programs = channel_programs.get(channel_code, [])
+        if icon and icon.startswith(
+            "http"
+        ):
 
-        for program in programs:
-            title = (
-                program.get("prevueName")
-                or program.get("name")
-                or "Bilinmeyen Program"
-            )
-
-            description = program.get("description") or ""
-            genre = program.get("genre") or ""
-
-            begin_value = program.get("beginTime") or ""
-            end_value = program.get("endTime") or ""
-
-            begin_dt = parse_datetime(begin_value)
-            end_dt = parse_datetime(end_value)
-
-            if not begin_dt or not end_dt:
-                continue
-
-            # XMLTV formatında local timezone bilinmediği için
-            # +0300 kullanıyoruz (Türkiye).
-            start_attr = begin_dt.strftime("%Y%m%d%H%M%S") + " +0300"
-            stop_attr = end_dt.strftime("%Y%m%d%H%M%S") + " +0300"
-
-            programme = ET.SubElement(
-                tv,
-                "programme",
+            ET.SubElement(
+                channel_element,
+                "icon",
                 {
-                    "start": start_attr,
-                    "stop": stop_attr,
-                    "channel": channel_code,
+                    "src": icon,
                 },
             )
 
+    # -------------------------------------------------------------
+    # Programlar
+    # -------------------------------------------------------------
+
+    count = 0
+
+    for program in programs:
+
+        channel_code = first_nonempty(
+            program,
+            [
+                "channelCode",
+            ],
+        )
+
+        if not channel_code:
+            continue
+
+        begin_value = first_nonempty(
+            program,
+            [
+                "beginTime",
+            ],
+        )
+
+        end_value = first_nonempty(
+            program,
+            [
+                "endTime",
+            ],
+        )
+
+        begin_dt = parse_datetime(
+            begin_value
+        )
+
+        end_dt = parse_datetime(
+            end_value
+        )
+
+        if not begin_dt or not end_dt:
+            continue
+
+        title = first_nonempty(
+            program,
+            [
+                "prevueName",
+                "name",
+            ],
+        )
+
+        if not title:
+            title = "Bilinmeyen Program"
+
+        description = first_nonempty(
+            program,
+            [
+                "description",
+                "desc",
+            ],
+        )
+
+        genre = first_nonempty(
+            program,
+            [
+                "genre",
+                "category",
+            ],
+        )
+
+        rating = first_nonempty(
+            program,
+            [
+                "ratingId",
+            ],
+        )
+
+        start_attr = (
+            begin_dt.strftime(
+                "%Y%m%d%H%M%S"
+            )
+            + " "
+            + TIMEZONE
+        )
+
+        stop_attr = (
+            end_dt.strftime(
+                "%Y%m%d%H%M%S"
+            )
+            + " "
+            + TIMEZONE
+        )
+
+        programme_element = ET.SubElement(
+            tv,
+            "programme",
+            {
+                "start": start_attr,
+                "stop": stop_attr,
+                "channel": channel_code,
+            },
+        )
+
+        add_text(
+            programme_element,
+            "title",
+            title,
+            "tr",
+        )
+
+        if description:
+
             add_text(
-                programme,
-                "title",
-                title,
+                programme_element,
+                "desc",
+                description,
+                "tr",
             )
 
-            if description:
-                add_text(
-                    programme,
-                    "desc",
-                    description,
-                )
+        if genre:
 
-            if genre:
-                category = ET.SubElement(programme, "category")
-                category.text = genre
+            add_text(
+                programme_element,
+                "category",
+                genre,
+                "tr",
+            )
 
-            release_year = program.get("releaseYear") or ""
+        if rating:
 
-            if release_year.isdigit():
-                date_element = ET.SubElement(
-                    programme,
-                    "date",
-                )
-                date_element.text = release_year
+            add_text(
+                programme_element,
+                "rating",
+                rating,
+            )
 
-    tree = ET.ElementTree(tv)
+        count += 1
+
+    tree = ET.ElementTree(
+        tv
+    )
 
     try:
-        ET.indent(tree, space="  ")
+
+        ET.indent(
+            tree,
+            space="  ",
+        )
+
     except AttributeError:
-        # Python < 3.9 için sorun çıkarmasın.
         pass
 
     tree.write(
@@ -440,108 +922,353 @@ def create_xmltv(channels, channel_programs):
         xml_declaration=True,
     )
 
+    return count
+
+
+# ---------------------------------------------------------------------
+# MAIN
+# ---------------------------------------------------------------------
 
 def main():
-    start_time = time.time()
 
-    print("=" * 70)
-    print("TIVIBU EPG TEST / XMLTV OLUŞTURUCU")
-    print("=" * 70)
+    start = time.time()
 
-    # 1) Ana sayfayı al.
+    print()
+    print("=" * 70)
+    print("TİVİBU 7 GÜNLÜK EPG OLUŞTURUCU")
+    print("=" * 70)
+    print()
+
+    # -------------------------------------------------------------
+    # 1) Sayfa
+    # -------------------------------------------------------------
+
     page = get_main_page()
 
-    # 2) CSRF token.
-    print("[2/4] CSRF token aranıyor...")
-    csrf_token = extract_csrf_token(page)
+    print()
 
-    print("      CSRF token bulundu.")
+    # -------------------------------------------------------------
+    # 2) CSRF
+    # -------------------------------------------------------------
 
-    # 3) Kanal listesi.
-    channels = extract_channel_list(page)
+    print("[2/5] CSRF token aranıyor...")
 
-    if not channels:
+    csrf_token = extract_csrf_token(
+        page
+    )
+
+    print(
+        f"      Token bulundu. "
+        f"Uzunluk: {len(csrf_token)}"
+    )
+
+    # -------------------------------------------------------------
+    # 3) Başlangıç değişkenleri
+    # -------------------------------------------------------------
+
+    channel_column_code = (
+        extract_channel_column_code(
+            page
+        )
+    )
+
+    channel_search_value = (
+        extract_channel_search_value(
+            page
+        )
+    )
+
+    print()
+    print(
+        f"channelColumnCode   : "
+        f"{channel_column_code or '(boş)'}"
+    )
+
+    print(
+        f"channelSearchValue  : "
+        f"{channel_search_value or '(boş)'}"
+    )
+
+    # -------------------------------------------------------------
+    # 4) Tarihler
+    # -------------------------------------------------------------
+
+    target_dates = build_target_dates(
+        page
+    )
+
+    if not target_dates:
+
         raise RuntimeError(
-            "Hiç kanal bulunamadı."
+            "Hiç tarih bulunamadı."
         )
 
-    print(f"      Bulunan benzersiz kanal sayısı: {len(channels)}")
-
-    # İlk birkaç kanalı göster.
     print()
-    print("İlk kanallar:")
-    for channel in channels[:15]:
+    print(
+        f"[3/5] Hedef tarih sayısı: "
+        f"{len(target_dates)}"
+    )
+
+    for index, item in enumerate(
+        target_dates,
+        start=1,
+    ):
+
         print(
-            f"  - {channel['name']} "
-            f"-> {channel['code']}"
+            f"      {index}. "
+            f"{item['date'].strftime('%d.%m.%Y')} "
+            f"-> "
+            f"{item['begin']} / {item['end']}"
         )
 
+    # -------------------------------------------------------------
+    # 5) EPG verisini çek
+    # -------------------------------------------------------------
+
     print()
-    print("[3/4] Tivibu GetPrevueList çağrıları yapılıyor...")
+    print(
+        "[4/5] GetMultiPrevueData çağrıları başlıyor..."
+    )
+    print()
 
-    channel_programs = {}
+    channels = {}
 
-    success_count = 0
-    fail_count = 0
+    all_programs = {}
+
     total_programs = 0
 
-    for index, channel in enumerate(channels, start=1):
-        channel_name = channel["name"]
-        channel_code = channel["code"]
+    successful_days = 0
+
+    failed_days = 0
+
+    for index, date_info in enumerate(
+        target_dates,
+        start=1,
+    ):
 
         print(
-            f"[{index:03d}/{len(channels):03d}] "
-            f"{channel_name} "
-            f"({channel_code})"
+            f"--- GÜN {index}/{len(target_dates)} ---"
+        )
+
+        print(
+            f"Tarih: "
+            f"{date_info['date'].strftime('%d.%m.%Y')}"
         )
 
         try:
-            response = post_prevue(
-                channel_code,
-                csrf_token,
+
+            data = post_multi_prevue(
+                csrf_token=csrf_token,
+                channel_column_code=channel_column_code,
+                channel_search_value=channel_search_value,
+                begin_date=date_info["begin"],
+                end_date=date_info["end"],
+                page_no=1,
             )
 
-            programs = parse_programs(response)
+            # -----------------------------------------------------
+            # Kanal bilgileri
+            # -----------------------------------------------------
 
-            channel_programs[channel_code] = programs
+            day_channels = normalize_channels(
+                data
+            )
 
-            success_count += 1
-            total_programs += len(programs)
+            for code, info in day_channels.items():
+
+                if code not in channels:
+
+                    channels[code] = info
+
+                else:
+
+                    # İlk isim boş/garipse yenisini kullan.
+                    old_name = channels[code]["name"]
+
+                    if (
+                        not old_name
+                        or old_name == code
+                    ):
+                        channels[code]["name"] = (
+                            info["name"]
+                        )
+
+                    if (
+                        not channels[code].get("icon")
+                        and info.get("icon")
+                    ):
+                        channels[code]["icon"] = (
+                            info["icon"]
+                        )
+
+            # -----------------------------------------------------
+            # Programlar
+            # -----------------------------------------------------
+
+            day_programs = normalize_programs(
+                data
+            )
+
+            new_count = 0
+
+            for program in day_programs:
+
+                key = programme_key(
+                    program
+                )
+
+                if key in all_programs:
+                    continue
+
+                all_programs[key] = program
+
+                new_count += 1
+
+            total_programs += new_count
 
             print(
-                f"       OK - {len(programs)} program"
+                f"      Kanal: "
+                f"{len(day_channels)}"
             )
+
+            print(
+                f"      Program: "
+                f"{len(day_programs)}"
+            )
+
+            print(
+                f"      Yeni program: "
+                f"{new_count}"
+            )
+
+            successful_days += 1
 
         except Exception as exc:
-            fail_count += 1
+
+            failed_days += 1
 
             print(
-                f"       HATA - {exc}"
+                f"      HATA: {exc}"
             )
 
-            # Hatalı kanalın XML'i bozmasını engelle.
-            channel_programs[channel_code] = []
+        print()
 
-        time.sleep(REQUEST_DELAY)
+        time.sleep(
+            REQUEST_DELAY
+        )
 
-    # XML oluştur.
-    create_xmltv(
-        channels,
-        channel_programs,
+    # -------------------------------------------------------------
+    # Eğer channelListViewModel boş ama programlarda kanal kodları
+    # varsa yine de XML için kanal oluştur.
+    # -------------------------------------------------------------
+
+    for program in all_programs.values():
+
+        code = first_nonempty(
+            program,
+            [
+                "channelCode",
+            ],
+        )
+
+        if not code:
+            continue
+
+        if code not in channels:
+
+            channel_name = first_nonempty(
+                program,
+                [
+                    "channelName",
+                ],
+            )
+
+            if not channel_name:
+                channel_name = code
+
+            channels[code] = {
+                "name": channel_name,
+                "icon": "",
+            }
+
+    # -------------------------------------------------------------
+    # Programları tarihe göre sırala
+    # -------------------------------------------------------------
+
+    sorted_programs = sorted(
+        all_programs.values(),
+        key=lambda p: (
+            p.get(
+                "channelCode",
+                ""
+            ),
+            p.get(
+                "beginTime",
+                ""
+            ),
+        ),
     )
 
-    elapsed = time.time() - start_time
+    # -------------------------------------------------------------
+    # XML oluştur
+    # -------------------------------------------------------------
+
+    xml_program_count = create_xmltv(
+        channels=channels,
+        programs=sorted_programs,
+    )
+
+    # -------------------------------------------------------------
+    # Sonuç
+    # -------------------------------------------------------------
+
+    elapsed = time.time() - start
 
     print()
     print("=" * 70)
     print("TAMAMLANDI")
     print("=" * 70)
-    print(f"Kanal sayısı       : {len(channels)}")
-    print(f"Başarılı kanallar  : {success_count}")
-    print(f"Hatalı kanallar    : {fail_count}")
-    print(f"Toplam program     : {total_programs}")
-    print(f"Oluşturulan dosya  : {OUTPUT_FILE}")
-    print(f"Süre               : {elapsed:.1f} saniye")
+
+    print(
+        f"Kullanılan gün sayısı : "
+        f"{len(target_dates)}"
+    )
+
+    print(
+        f"Başarılı gün          : "
+        f"{successful_days}"
+    )
+
+    print(
+        f"Hatalı gün            : "
+        f"{failed_days}"
+    )
+
+    print(
+        f"Kanal sayısı          : "
+        f"{len(channels)}"
+    )
+
+    print(
+        f"Toplanan program      : "
+        f"{len(sorted_programs)}"
+    )
+
+    print(
+        f"XML program sayısı    : "
+        f"{xml_program_count}"
+    )
+
+    print(
+        f"Dosya                 : "
+        f"{OUTPUT_FILE}"
+    )
+
+    print(
+        f"Süre                  : "
+        f"{elapsed:.1f} saniye"
+    )
+
     print("=" * 70)
 
 
