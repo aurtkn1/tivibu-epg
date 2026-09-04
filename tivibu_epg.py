@@ -1,13 +1,13 @@
 import re
 import html
+import time
 import unicodedata
 from datetime import datetime, timedelta
-from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from html.parser import HTMLParser
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urljoin
+from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
-
-from playwright.sync_api import sync_playwright
 
 
 BASE_URL = "https://www.tivibu.com.tr"
@@ -16,6 +16,9 @@ OUTPUT_FILE = "epg.xml"
 
 ISTANBUL = ZoneInfo("Europe/Istanbul")
 
+MAX_WORKERS = 12
+REQUEST_TIMEOUT = 35
+RETRY_COUNT = 3
 
 BAD_CHANNELS = {
     "BENİM KANALIM",
@@ -27,97 +30,163 @@ BAD_CHANNELS = {
     "TRT1 CANLI İZLE",
 }
 
+BAD_CHANNEL_PARTS = {
+    "FAVORİ KANALLARIM",
+    "CANLI TV, KANAL VE PROGRAMLAR",
+    "TİVİBU SPOR CANLI İZLE",
+    "TRT1 CANLI İZLE",
+}
 
-TIME_RE = re.compile(
-    r"(\d{1,2}):(\d{2})\s*→\s*(\d{1,2}):(\d{2})"
+TIME_RANGE_RE = re.compile(
+    r"(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})"
 )
 
 
-class TivibuHTMLParser(HTMLParser):
+class ChannelLinkParser(HTMLParser):
     def __init__(self):
-        super().__init__(
-            convert_charrefs=True
-        )
+        super().__init__(convert_charrefs=True)
 
-        self.anchors = []
+        self.links = []
 
-        self.current_href = None
+        self.in_a = False
+        self.current_href = ""
         self.current_text = []
-        self.anchor_depth = 0
 
     def handle_starttag(self, tag, attrs):
-        if tag.lower() != "a":
+        tag = tag.lower()
+
+        if tag != "a":
             return
 
-        attrs_dict = dict(attrs)
+        attrs = dict(attrs)
 
-        self.current_href = attrs_dict.get(
-            "href",
-            ""
-        )
-
+        self.in_a = True
+        self.current_href = attrs.get("href", "")
         self.current_text = []
-        self.anchor_depth = 1
-
-    def handle_startendtag(self, tag, attrs):
-        if tag.lower() != "a":
-            return
-
-        attrs_dict = dict(attrs)
-
-        self.anchors.append(
-            {
-                "href": attrs_dict.get(
-                    "href",
-                    ""
-                ),
-                "text": "",
-            }
-        )
 
     def handle_data(self, data):
-        if self.anchor_depth > 0:
+        if self.in_a:
             self.current_text.append(data)
-
-    def handle_entityref(self, name):
-        if self.anchor_depth > 0:
-            self.current_text.append(
-                html.unescape(
-                    f"&{name};"
-                )
-            )
-
-    def handle_charref(self, name):
-        if self.anchor_depth > 0:
-            self.current_text.append(
-                html.unescape(
-                    f"&#{name};"
-                )
-            )
 
     def handle_endtag(self, tag):
         if tag.lower() != "a":
             return
 
-        if self.anchor_depth <= 0:
+        if not self.in_a:
             return
 
-        text = " ".join(
-            self.current_text
+        text = clean_text(
+            " ".join(self.current_text)
         )
 
-        text = clean_text(text)
-
-        self.anchors.append(
-            {
-                "href": self.current_href or "",
-                "text": text,
-            }
+        href = clean_text(
+            self.current_href
         )
 
-        self.current_href = None
+        if href and text:
+            self.links.append(
+                {
+                    "href": href,
+                    "text": text,
+                }
+            )
+
+        self.in_a = False
+        self.current_href = ""
         self.current_text = []
-        self.anchor_depth = 0
+
+
+class TextExtractor(HTMLParser):
+    BLOCK_TAGS = {
+        "br",
+        "p",
+        "div",
+        "section",
+        "article",
+        "header",
+        "footer",
+        "main",
+        "li",
+        "ul",
+        "ol",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "tr",
+        "td",
+        "th",
+    }
+
+    SKIP_TAGS = {
+        "script",
+        "style",
+        "noscript",
+        "svg",
+    }
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+
+        self.lines = []
+        self.current = []
+
+        self.skip_depth = 0
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+
+        if tag in self.SKIP_TAGS:
+            self.skip_depth += 1
+            return
+
+        if self.skip_depth:
+            return
+
+        if tag in self.BLOCK_TAGS:
+            self.flush()
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+
+        if tag in self.SKIP_TAGS:
+            if self.skip_depth > 0:
+                self.skip_depth -= 1
+            return
+
+        if self.skip_depth:
+            return
+
+        if tag in self.BLOCK_TAGS:
+            self.flush()
+
+    def handle_data(self, data):
+        if self.skip_depth:
+            return
+
+        data = data.replace(
+            "\xa0",
+            " "
+        )
+
+        if data.strip():
+            self.current.append(data)
+
+    def flush(self):
+        text = clean_text(
+            " ".join(self.current)
+        )
+
+        if text:
+            self.lines.append(text)
+
+        self.current = []
+
+    def get_lines(self):
+        self.flush()
+        return self.lines
 
 
 def clean_text(value):
@@ -143,30 +212,18 @@ def clean_text(value):
 
 
 def normalize_name(value):
-    return clean_text(
-        value
-    ).upper()
+    return clean_text(value).upper()
 
 
 def is_bad_channel(name):
-    normalized = normalize_name(
-        name
-    )
+    normalized = normalize_name(name)
 
     if normalized in BAD_CHANNELS:
         return True
 
-    if "FAVORİ KANALLARIM" in normalized:
-        return True
-
-    if "CANLI TV, KANAL VE PROGRAMLAR" in normalized:
-        return True
-
-    if "TİVİBU SPOR CANLI İZLE" in normalized:
-        return True
-
-    if "TRT1 CANLI İZLE" in normalized:
-        return True
+    for part in BAD_CHANNEL_PARTS:
+        if part in normalized:
+            return True
 
     return False
 
@@ -176,23 +233,25 @@ def slugify(value):
 
     replacements = {
         "ç": "c",
-        "Ç": "C",
+        "Ç": "c",
         "ğ": "g",
-        "Ğ": "G",
+        "Ğ": "g",
         "ı": "i",
-        "İ": "I",
+        "İ": "i",
         "ö": "o",
-        "Ö": "O",
+        "Ö": "o",
         "ş": "s",
-        "Ş": "S",
+        "Ş": "s",
         "ü": "u",
-        "Ü": "U",
+        "Ü": "u",
         "â": "a",
-        "Â": "A",
+        "Â": "a",
         "î": "i",
-        "Î": "I",
+        "Î": "i",
         "û": "u",
-        "Û": "U",
+        "Û": "u",
+        "’": "",
+        "'": "",
     }
 
     for old, new in replacements.items():
@@ -214,11 +273,6 @@ def slugify(value):
 
     value = value.lower()
 
-    value = value.replace(
-        "&",
-        " ve "
-    )
-
     value = re.sub(
         r"[^a-z0-9]+",
         "_",
@@ -239,304 +293,363 @@ def slugify(value):
     return value
 
 
-def unique_id(name, used):
+def unique_id(name, used_ids):
     base = slugify(name)
 
-    channel_id = base
-    number = 2
+    result = base
+    counter = 2
 
-    while channel_id in used:
-        channel_id = (
-            f"{base}_{number}"
-        )
-        number += 1
+    while result in used_ids:
+        result = f"{base}_{counter}"
+        counter += 1
 
-    used.add(channel_id)
+    used_ids.add(result)
 
-    return channel_id
+    return result
 
 
-def extract_channel_key(href):
-    href = clean_text(href)
+def http_get(url):
+    last_error = None
 
-    if not href:
-        return ""
+    for attempt in range(1, RETRY_COUNT + 1):
+        try:
+            request = Request(
+                url,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 "
+                        "(KHTML, like Gecko) "
+                        "Chrome/131.0.0.0 Safari/537.36"
+                    ),
+                    "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
+                    "Accept": (
+                        "text/html,application/xhtml+xml,"
+                        "application/xml;q=0.9,*/*;q=0.8"
+                    ),
+                    "Cache-Control": "no-cache",
+                },
+            )
 
-    parsed = urlparse(
-        href
-    )
+            with urlopen(
+                request,
+                timeout=REQUEST_TIMEOUT
+            ) as response:
 
-    query = parse_qs(
-        parsed.query
-    )
+                raw = response.read()
 
-    for key in (
-        "i",
-        "channel",
-        "channelId",
-        "channelid",
-    ):
-        values = query.get(key)
+                encoding = (
+                    response.headers.get_content_charset()
+                    or "utf-8"
+                )
 
-        if not values:
-            continue
+                return raw.decode(
+                    encoding,
+                    errors="replace"
+                )
 
-        value = values[0]
+        except Exception as exc:
+            last_error = exc
 
-        match = re.search(
-            r"(ch[a-zA-Z0-9_-]+)",
-            value
-        )
+            if attempt < RETRY_COUNT:
+                time.sleep(
+                    attempt
+                )
 
-        if match:
-            return match.group(1)
-
-    match = re.search(
-        r"(ch[a-zA-Z0-9_-]{6,})",
-        href
-    )
-
-    if match:
-        return match.group(1)
-
-    return href
-
-
-def parse_program_text(text):
-    text = clean_text(text)
-
-    if not text:
-        return None
-
-    text = re.sub(
-        r"\s+Canlı\s*$",
-        "",
-        text,
-        flags=re.IGNORECASE
-    )
-
-    match = TIME_RE.search(
-        text
-    )
-
-    if not match:
-        return None
-
-    sh = int(
-        match.group(1)
-    )
-    sm = int(
-        match.group(2)
-    )
-    eh = int(
-        match.group(3)
-    )
-    em = int(
-        match.group(4)
-    )
-
-    if sh > 23 or eh > 23:
-        return None
-
-    if sm > 59 or em > 59:
-        return None
-
-    title = text[
-        :match.start()
-    ]
-
-    title = clean_text(
-        title
-    )
-
-    title = re.sub(
-        r"\s*-\s*$",
-        "",
-        title
-    )
-
-    title = clean_text(
-        title
-    )
-
-    if not title:
-        return None
-
-    return {
-        "title": title,
-        "start_hour": sh,
-        "start_minute": sm,
-        "end_hour": eh,
-        "end_minute": em,
-    }
+    raise last_error
 
 
-def fetch_html():
+def get_main_page():
     print(
-        "Tivibu canlı TV sayfası alınıyor..."
+        "Tivibu canlı TV kanalları alınıyor..."
     )
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-            ],
-        )
+    raw_html = http_get(
+        LIVE_TV_URL
+    )
 
-        page = browser.new_page(
-            locale="tr-TR",
-            timezone_id="Europe/Istanbul",
-            user_agent=(
-                "Mozilla/5.0 (X11; Linux x86_64) "
-                "AppleWebKit/537.36 "
-                "(KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
-        )
-
-        page.goto(
-            LIVE_TV_URL,
-            wait_until="domcontentloaded",
-            timeout=120000,
-        )
-
-        page.wait_for_timeout(
-            7000
-        )
-
-        html_text = page.content()
-
-        browser.close()
-
-    return html_text
-
-
-def collect_data(raw_html):
-    parser = TivibuHTMLParser()
+    parser = ChannelLinkParser()
 
     parser.feed(
         raw_html
     )
 
     channels = []
-    channel_seen = set()
+    seen_urls = set()
 
-    groups = OrderedDict()
-
-    # ---------------------------------------------------------
-    # GERÇEK KANALLAR
-    # ---------------------------------------------------------
-
-    for anchor in parser.anchors:
+    for link in parser.links:
         href = clean_text(
-            anchor["href"]
+            link["href"]
         )
 
-        text = clean_text(
-            anchor["text"]
+        name = clean_text(
+            link["text"]
         )
 
-        if not href or not text:
+        if not href or not name:
             continue
 
         if "/kanallar/" not in href:
             continue
 
-        if is_bad_channel(text):
+        if is_bad_channel(name):
             continue
 
-        if href.startswith("/"):
-            full_href = (
-                BASE_URL + href
-            )
-        else:
-            full_href = href
+        full_url = urljoin(
+            BASE_URL,
+            href
+        )
 
-        full_href = full_href.split(
+        full_url = full_url.split(
             "#"
         )[0]
 
-        if full_href in channel_seen:
+        if full_url in seen_urls:
             continue
 
-        channel_seen.add(
-            full_href
+        seen_urls.add(
+            full_url
         )
 
         channels.append(
             {
-                "name": text,
-                "url": full_href,
+                "name": name,
+                "url": full_url,
             }
         )
 
-    # ---------------------------------------------------------
-    # PROGRAMLAR
-    # ---------------------------------------------------------
+    return channels
 
-    for anchor in parser.anchors:
-        href = clean_text(
-            anchor["href"]
+
+def extract_program_section(lines):
+    start_index = None
+
+    for i, line in enumerate(lines):
+        normalized = normalize_name(
+            line
         )
 
-        text = clean_text(
-            anchor["text"]
+        if normalized == "GÜNÜN PROGRAMLARI":
+            start_index = i + 1
+            break
+
+        if "GÜNÜN PROGRAMLARI" in normalized:
+            start_index = i + 1
+            break
+
+    if start_index is None:
+        return []
+
+    section = []
+
+    stop_words = (
+        "YENİ VE POPÜLER",
+        "ÇOK İZLENEN",
+        "TÜMÜNÜ GÖR",
+        "TİVİBU PAKETLER",
+        "YASAL METİNLER",
+        "ÖNE ÇIKANLAR",
+        "KANAL D CANLI YAYINI",
+        "TİVİBU İLE",
+    )
+
+    for line in lines[start_index:]:
+        normalized = normalize_name(
+            line
         )
 
-        if not href:
-            continue
-
-        if "/rv?" not in href:
-            continue
-
-        if not TIME_RE.search(
-            text
+        if any(
+            word in normalized
+            for word in stop_words
         ):
-            continue
+            break
 
-        program = parse_program_text(
-            text
+        section.append(
+            line
         )
 
-        if not program:
+    return section
+
+
+def parse_schedule_from_lines(lines):
+    programs = []
+
+    i = 0
+
+    while i < len(lines):
+        line = clean_text(
+            lines[i]
+        )
+
+        if not line:
+            i += 1
             continue
 
-        if href.startswith("/"):
-            full_href = (
-                BASE_URL + href
+        match = TIME_RANGE_RE.search(
+            line
+        )
+
+        if match:
+            title = clean_text(
+                line[
+                    :match.start()
+                ]
             )
-        else:
-            full_href = href
 
-        group_key = extract_channel_key(
-            full_href
-        )
+            sh = int(
+                match.group(1)
+            )
 
-        if not group_key:
+            sm = int(
+                match.group(2)
+            )
+
+            eh = int(
+                match.group(3)
+            )
+
+            em = int(
+                match.group(4)
+            )
+
+            if (
+                title
+                and sh <= 23
+                and eh <= 23
+                and sm <= 59
+                and em <= 59
+            ):
+                programs.append(
+                    {
+                        "title": title,
+                        "start_hour": sh,
+                        "start_minute": sm,
+                        "end_hour": eh,
+                        "end_minute": em,
+                    }
+                )
+
+            i += 1
             continue
 
-        if group_key not in groups:
-            groups[group_key] = []
+        if i + 1 < len(lines):
+            next_line = clean_text(
+                lines[i + 1]
+            )
 
-        groups[group_key].append(
-            program
+            match = TIME_RANGE_RE.fullmatch(
+                next_line
+            )
+
+            if match:
+                title = line
+
+                sh = int(
+                    match.group(1)
+                )
+
+                sm = int(
+                    match.group(2)
+                )
+
+                eh = int(
+                    match.group(3)
+                )
+
+                em = int(
+                    match.group(4)
+                )
+
+                if (
+                    title
+                    and sh <= 23
+                    and eh <= 23
+                    and sm <= 59
+                    and em <= 59
+                ):
+                    programs.append(
+                        {
+                            "title": title,
+                            "start_hour": sh,
+                            "start_minute": sm,
+                            "end_hour": eh,
+                            "end_minute": em,
+                        }
+                    )
+
+                    i += 2
+                    continue
+
+        i += 1
+
+    return programs
+
+
+def fetch_channel(channel):
+    try:
+        raw_html = http_get(
+            channel["url"]
         )
 
-    return channels, groups
+        parser = TextExtractor()
+
+        parser.feed(
+            raw_html
+        )
+
+        lines = parser.get_lines()
+
+        schedule_lines = extract_program_section(
+            lines
+        )
+
+        programs = parse_schedule_from_lines(
+            schedule_lines
+        )
+
+        return {
+            "channel": channel,
+            "programs": programs,
+            "error": None,
+        }
+
+    except Exception as exc:
+        return {
+            "channel": channel,
+            "programs": [],
+            "error": str(exc),
+        }
 
 
-def assign_dates(programs, base_date):
+def assign_program_dates(
+    programs,
+    today,
+    now_local
+):
     if not programs:
         return []
 
-    result = []
+    first_start = (
+        programs[0]["start_hour"] * 60
+        + programs[0]["start_minute"]
+    )
 
-    current_date = base_date
+    now_minutes = (
+        now_local.hour * 60
+        + now_local.minute
+    )
+
+    if first_start > now_minutes:
+        current_date = (
+            today
+            - timedelta(days=1)
+        )
+    else:
+        current_date = today
 
     previous_start = None
+
+    result = []
 
     for program in programs:
         start_minutes = (
@@ -597,25 +710,50 @@ def assign_dates(programs, base_date):
     return result
 
 
-def remove_duplicate_programs(programs):
+def clean_programs(
+    programs,
+    today
+):
     result = []
-
     seen = set()
 
-    for program in sorted(
-        programs,
-        key=lambda x: (
-            x["start"],
-            x["stop"],
-            x["title"],
-        ),
-    ):
+    for program in programs:
+        if program["start"].date() != today:
+            continue
+
+        if program["stop"] <= program["start"]:
+            continue
+
+        duration = (
+            program["stop"]
+            - program["start"]
+        ).total_seconds()
+
+        if duration <= 0:
+            continue
+
+        if duration > 24 * 60 * 60:
+            continue
+
+        title = clean_text(
+            program["title"]
+        )
+
+        if not title:
+            continue
+
+        # Sitedeki bazı gereksiz metinleri ele.
+        if title in {
+            "Canlı Yayın",
+            "Program Akışı",
+            "Günün Programları",
+        }:
+            continue
+
         key = (
+            title.lower(),
             program["start"],
             program["stop"],
-            normalize_name(
-                program["title"]
-            ),
         )
 
         if key in seen:
@@ -626,88 +764,61 @@ def remove_duplicate_programs(programs):
         )
 
         result.append(
-            program
+            {
+                "title": title,
+                "start": program["start"],
+                "stop": program["stop"],
+            }
         )
+
+    result.sort(
+        key=lambda x: (
+            x["start"],
+            x["stop"],
+        )
+    )
 
     return result
 
 
 def build_epg(
-    channels,
-    groups,
+    results,
     today,
+    now_local
 ):
     used_ids = set()
 
-    output_channels = []
-    output_programs = []
+    channels = []
+    programs = []
 
-    group_keys = list(
-        groups.keys()
-    )
+    for result in results:
+        channel = result["channel"]
+        raw_programs = result["programs"]
 
-    print()
-    print(
-        f"Toplam program bağlantı grubu: {len(group_keys)}"
-    )
+        if not raw_programs:
+            continue
 
-    # Tivibu canlı TV sayfasındaki kanal sırası,
-    # program gruplarının sırasıyla eşleştirilir.
-    #
-    # Program grubu olmayan sahte kanallar yukarıda
-    # zaten filtrelenmiştir.
+        dated_programs = assign_program_dates(
+            raw_programs,
+            today,
+            now_local
+        )
 
-    limit = min(
-        len(channels),
-        len(group_keys)
-    )
+        todays_programs = clean_programs(
+            dated_programs,
+            today
+        )
 
-    for index in range(limit):
-        channel = channels[index]
-        group_key = group_keys[index]
+        if not todays_programs:
+            continue
 
         channel_name = clean_text(
             channel["name"]
         )
 
-        raw_programs = groups[
-            group_key
-        ]
-
-        dated_programs = assign_dates(
-            raw_programs,
-            today,
-        )
-
-        todays = []
-
-        for program in dated_programs:
-            if program["start"].date() != today:
-                continue
-
-            if program["stop"] <= program["start"]:
-                continue
-
-            duration = (
-                program["stop"]
-                - program["start"]
-            ).total_seconds()
-
-            if duration <= 0:
-                continue
-
-            if duration > 24 * 60 * 60:
-                continue
-
-            todays.append(
-                program
-            )
-
-        todays = remove_duplicate_programs(
-            todays
-        )
-
-        if not todays:
+        if is_bad_channel(
+            channel_name
+        ):
             continue
 
         channel_id = unique_id(
@@ -715,15 +826,15 @@ def build_epg(
             used_ids
         )
 
-        output_channels.append(
+        channels.append(
             {
                 "id": channel_id,
                 "name": channel_name,
             }
         )
 
-        for program in todays:
-            output_programs.append(
+        for program in todays_programs:
+            programs.append(
                 {
                     "channel_id": channel_id,
                     "channel_name": channel_name,
@@ -733,16 +844,7 @@ def build_epg(
                 }
             )
 
-        print(
-            f"[{index + 1}/{limit}] "
-            f"{channel_name}: "
-            f"{len(todays)} program"
-        )
-
-    return (
-        output_channels,
-        output_programs
-    )
+    return channels, programs
 
 
 def xml_escape(value):
@@ -753,12 +855,13 @@ def xml_escape(value):
 
 
 def xml_datetime(value):
+    # Türkiye sabit +0300
     return value.strftime(
         "%Y%m%d%H%M%S +0300"
     )
 
 
-def write_epg(
+def write_xml(
     channels,
     programs
 ):
@@ -853,19 +956,19 @@ def write_epg(
         )
 
 
-def validate_epg(
+def validate_xml(
     channels,
     programs
 ):
     if not channels:
         raise RuntimeError(
-            "Hiç kanal oluşturulmadı."
+            "Hiç kanal bulunamadı."
         )
 
     if not programs:
         raise RuntimeError(
-            "Hiç program oluşturulmadı. "
-            "EPG boş dosya olarak kaydedilmeyecek."
+            "Hiç program bulunamadı. "
+            "EPG boş bırakılmadı."
         )
 
     channel_ids = {
@@ -873,26 +976,21 @@ def validate_epg(
         for channel in channels
     }
 
-    bad_references = []
-
     for program in programs:
         if program["channel_id"] not in channel_ids:
-            bad_references.append(
-                program
+            raise RuntimeError(
+                "Geçersiz programme/channel eşleşmesi bulundu."
             )
-
-    if bad_references:
-        raise RuntimeError(
-            "Geçersiz programme/channel eşleşmesi bulundu."
-        )
 
 
 def main():
-    now = datetime.now(
+    started = time.time()
+
+    now_local = datetime.now(
         ISTANBUL
     )
 
-    today = now.date()
+    today = now_local.date()
 
     print()
     print("=" * 70)
@@ -902,76 +1000,148 @@ def main():
         f"Tarih: {today.strftime('%d.%m.%Y')}"
     )
     print(
-        f"Saat:  {now.strftime('%H:%M:%S')}"
+        f"Saat:  {now_local.strftime('%H:%M:%S')}"
     )
     print("=" * 70)
 
-    raw_html = fetch_html()
-
-    channels, groups = collect_data(
-        raw_html
-    )
+    channels = get_main_page()
 
     print(
         f"Bulunan gerçek kanal: {len(channels)}"
     )
 
-    total_programs = sum(
-        len(value)
-        for value in groups.values()
-    )
-
-    print(
-        f"Toplam program bağlantısı: {total_programs}"
-    )
-
     if not channels:
         raise RuntimeError(
-            "Tivibu sayfasından kanal bulunamadı."
+            "Tivibu canlı TV sayfasından kanal bulunamadı."
         )
 
-    if not groups:
-        raise RuntimeError(
-            "Tivibu sayfasından /rv? program bağlantıları bulunamadı."
-        )
+    print()
+    print(
+        f"{len(channels)} kanal paralel taranıyor..."
+    )
+    print(
+        f"Paralel bağlantı sayısı: {MAX_WORKERS}"
+    )
+    print()
+
+    results = []
+
+    success_count = 0
+    failed_count = 0
+    program_count = 0
+
+    with ThreadPoolExecutor(
+        max_workers=MAX_WORKERS
+    ) as executor:
+
+        futures = {
+            executor.submit(
+                fetch_channel,
+                channel
+            ): channel
+            for channel in channels
+        }
+
+        completed = 0
+
+        for future in as_completed(
+            futures
+        ):
+            completed += 1
+
+            result = future.result()
+
+            channel = result["channel"]
+            programs = result["programs"]
+            error = result["error"]
+
+            results.append(
+                result
+            )
+
+            if error:
+                failed_count += 1
+
+                print(
+                    f"[{completed}/{len(channels)}] "
+                    f"{channel['name']}: HATA"
+                )
+
+            else:
+                if programs:
+                    success_count += 1
+                    program_count += len(
+                        programs
+                    )
+
+                    print(
+                        f"[{completed}/{len(channels)}] "
+                        f"{channel['name']}: "
+                        f"{len(programs)} program"
+                    )
+
+                else:
+                    print(
+                        f"[{completed}/{len(channels)}] "
+                        f"{channel['name']}: 0 program"
+                    )
+
+    print()
+    print("=" * 70)
+    print("TARAMA SONUCU")
+    print("=" * 70)
+    print(
+        f"Program bulunan kanal : {success_count}"
+    )
+    print(
+        f"Başarısız kanal       : {failed_count}"
+    )
+    print(
+        f"Ham program sayısı    : {program_count}"
+    )
+    print("=" * 70)
 
     xml_channels, xml_programs = build_epg(
-        channels,
-        groups,
-        today
+        results,
+        today,
+        now_local
     )
 
     print()
     print(
-        f"Bugünün programı: {len(xml_programs)}"
+        f"Bugünün XML programı: {len(xml_programs)}"
     )
-
     print(
         f"XML kanal sayısı: {len(xml_channels)}"
     )
 
-    validate_epg(
+    validate_xml(
         xml_channels,
         xml_programs
     )
 
-    write_epg(
+    write_xml(
         xml_channels,
         xml_programs
     )
+
+    elapsed = time.time() - started
 
     print()
     print("=" * 70)
     print("EPG BAŞARIYLA OLUŞTURULDU")
     print("=" * 70)
     print(
-        f"Dosya: {OUTPUT_FILE}"
+        f"Dosya   : {OUTPUT_FILE}"
     )
     print(
-        f"Kanal: {len(xml_channels)}"
+        f"Kanal   : {len(xml_channels)}"
     )
     print(
-        f"Program: {len(xml_programs)}"
+        f"Program : {len(xml_programs)}"
+    )
+    print(
+        f"Süre    : {elapsed:.1f} saniye"
     )
     print("=" * 70)
 
