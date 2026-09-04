@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
 
   schedule:
-    # Her gün Türkiye saatiyle yaklaşık 04:00
-    # GitHub Actions UTC kullandığı için 01:00 UTC
-    - cron: "0 1 * * *"
+    # Her 30 dakikada bir çalışır
+    - cron: "*/30 * * * *"
 
 permissions:
   contents: write
