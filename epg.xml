@@ -1,2 +1,177 @@
-<?xml version='1.0' encoding='utf-8'?>
-<tv generator-info-name="Tivibu Günlük EPG" generator-info-url="https://www.tivibu.com.tr/" />
+<?xml version="1.0" encoding="UTF-8"?>
+<tv generator-info-name="Tivibu Günlük EPG" generator-info-url="https://www.tivibu.com.tr/canli-tv">
+  <channel id="tivibu_tanitim">
+    <display-name lang="tr">TİVİBU TANITIM</display-name>
+  </channel>
+  <channel id="tarih_tv">
+    <display-name lang="tr">TARİH TV</display-name>
+  </channel>
+  <channel id="sinema_tv">
+    <display-name lang="tr">SİNEMA TV</display-name>
+  </channel>
+  <channel id="sinema_2">
+    <display-name lang="tr">SİNEMA 2</display-name>
+  </channel>
+  <channel id="sinema_yerli">
+    <display-name lang="tr">SİNEMA YERLİ</display-name>
+  </channel>
+  <channel id="sinema_yerli_2">
+    <display-name lang="tr">SİNEMA YERLİ 2</display-name>
+  </channel>
+  <channel id="sinema_aksiyon">
+    <display-name lang="tr">SİNEMA AKSİYON</display-name>
+  </channel>
+  <channel id="sinema_aksiyon_2">
+    <display-name lang="tr">SİNEMA AKSİYON 2</display-name>
+  </channel>
+  <channel id="sinema_komedi">
+    <display-name lang="tr">SİNEMA KOMEDİ</display-name>
+  </channel>
+  <channel id="sinema_komedi_2">
+    <display-name lang="tr">SİNEMA KOMEDİ 2</display-name>
+  </channel>
+  <channel id="sinema_aile">
+    <display-name lang="tr">SİNEMA AİLE</display-name>
+  </channel>
+  <channel id="sinema_aile_2">
+    <display-name lang="tr">SİNEMA AİLE 2</display-name>
+  </channel>
+  <channel id="sinema_1001">
+    <display-name lang="tr">SİNEMA 1001</display-name>
+  </channel>
+  <channel id="sinema_1002">
+    <display-name lang="tr">SİNEMA 1002</display-name>
+  </channel>
+  <programme channel="sinema_yerli" start="20260904000000 +0300" stop="20260904014500 +0300">
+    <title lang="tr">Gülen Adam Film</title>
+  </programme>
+  <programme channel="sinema_yerli_2" start="20260904000000 +0300" stop="20260904014500 +0300">
+    <title lang="tr">Sevimli Hırsız Film</title>
+  </programme>
+  <programme channel="tivibu_tanitim" start="20260904000000 +0300" stop="20260904030000 +0300">
+    <title lang="tr">Tivibu'nun Renkli Dünyası Yaşam</title>
+  </programme>
+  <programme channel="sinema_yerli" start="20260904014500 +0300" stop="20260904033000 +0300">
+    <title lang="tr">Bir Hikayem Var Film</title>
+  </programme>
+  <programme channel="sinema_yerli_2" start="20260904014500 +0300" stop="20260904033000 +0300">
+    <title lang="tr">Gülen Adam Film</title>
+  </programme>
+  <programme channel="tivibu_tanitim" start="20260904030000 +0300" stop="20260904060000 +0300">
+    <title lang="tr">Tivibu'nun Renkli Dünyası Yaşam</title>
+  </programme>
+  <programme channel="sinema_yerli" start="20260904033000 +0300" stop="20260904053000 +0300">
+    <title lang="tr">Nalan Film</title>
+  </programme>
+  <programme channel="sinema_yerli_2" start="20260904033000 +0300" stop="20260904051500 +0300">
+    <title lang="tr">Bir Hikayem Var Film</title>
+  </programme>
+  <programme channel="sinema_yerli_2" start="20260904051500 +0300" stop="20260904071500 +0300">
+    <title lang="tr">Nalan Film</title>
+  </programme>
+  <programme channel="sinema_yerli" start="20260904053000 +0300" stop="20260904073000 +0300">
+    <title lang="tr">Akıllara Seza Film</title>
+  </programme>
+  <programme channel="tivibu_tanitim" start="20260904060000 +0300" stop="20260904090000 +0300">
+    <title lang="tr">Tivibu'nun Renkli Dünyası Yaşam</title>
+  </programme>
+  <programme channel="sinema_yerli_2" start="20260904071500 +0300" stop="20260904091500 +0300">
+    <title lang="tr">Akıllara Seza Film</title>
+  </programme>
+  <programme channel="sinema_yerli" start="20260904073000 +0300" stop="20260904091500 +0300">
+    <title lang="tr">Mavi Gece Film</title>
+  </programme>
+  <programme channel="tivibu_tanitim" start="20260904090000 +0300" stop="20260904120000 +0300">
+    <title lang="tr">Tivibu'nun Renkli Dünyası Yaşam</title>
+  </programme>
+  <programme channel="sinema_yerli" start="20260904091500 +0300" stop="20260904114500 +0300">
+    <title lang="tr">Cebimde Kelimeler Film</title>
+  </programme>
+  <programme channel="sinema_yerli_2" start="20260904091500 +0300" stop="20260904110000 +0300">
+    <title lang="tr">Mavi Gece Film</title>
+  </programme>
+  <programme channel="sinema_yerli_2" start="20260904110000 +0300" stop="20260904133000 +0300">
+    <title lang="tr">Cebimde Kelimeler Film</title>
+  </programme>
+  <programme channel="sinema_yerli" start="20260904114500 +0300" stop="20260904134500 +0300">
+    <title lang="tr">Ceylin Film</title>
+  </programme>
+  <programme channel="tivibu_tanitim" start="20260904120000 +0300" stop="20260904150000 +0300">
+    <title lang="tr">Tivibu'nun Renkli Dünyası Yaşam</title>
+  </programme>
+  <programme channel="sinema_yerli_2" start="20260904133000 +0300" stop="20260904153000 +0300">
+    <title lang="tr">Ceylin Film</title>
+  </programme>
+  <programme channel="sinema_yerli" start="20260904134500 +0300" stop="20260904160000 +0300">
+    <title lang="tr">Ölü Mevsim Film</title>
+  </programme>
+  <programme channel="tivibu_tanitim" start="20260904150000 +0300" stop="20260904180000 +0300">
+    <title lang="tr">Tivibu'nun Renkli Dünyası Yaşam</title>
+  </programme>
+  <programme channel="sinema_yerli_2" start="20260904153000 +0300" stop="20260904174500 +0300">
+    <title lang="tr">Ölü Mevsim Film</title>
+  </programme>
+  <programme channel="sinema_yerli" start="20260904160000 +0300" stop="20260904181500 +0300">
+    <title lang="tr">Son Akşam Yemeği Film</title>
+  </programme>
+  <programme channel="sinema_yerli_2" start="20260904174500 +0300" stop="20260904200000 +0300">
+    <title lang="tr">Son Akşam Yemeği Film</title>
+  </programme>
+  <programme channel="tivibu_tanitim" start="20260904180000 +0300" stop="20260904210000 +0300">
+    <title lang="tr">Tivibu'nun Renkli Dünyası Yaşam</title>
+  </programme>
+  <programme channel="sinema_yerli" start="20260904181500 +0300" stop="20260904200000 +0300">
+    <title lang="tr">Oregon Film</title>
+  </programme>
+  <programme channel="sinema_yerli" start="20260904200000 +0300" stop="20260904214500 +0300">
+    <title lang="tr">Bana Beni Anlat Film</title>
+  </programme>
+  <programme channel="sinema_yerli_2" start="20260904200000 +0300" stop="20260904214500 +0300">
+    <title lang="tr">Oregon Film</title>
+  </programme>
+  <programme channel="tivibu_tanitim" start="20260904210000 +0300" stop="20260905000000 +0300">
+    <title lang="tr">Tivibu'nun Renkli Dünyası Yaşam</title>
+  </programme>
+  <programme channel="sinema_yerli" start="20260904214500 +0300" stop="20260905001500 +0300">
+    <title lang="tr">Demir Kadın: Neslican Film</title>
+  </programme>
+  <programme channel="sinema_yerli_2" start="20260904214500 +0300" stop="20260904233000 +0300">
+    <title lang="tr">Bana Beni Anlat Film</title>
+  </programme>
+  <programme channel="sinema_1001" start="20260904220000 +0300" stop="20260905001500 +0300">
+    <title lang="tr">Kefernahum Film</title>
+  </programme>
+  <programme channel="sinema_aksiyon" start="20260904220000 +0300" stop="20260905001500 +0300">
+    <title lang="tr">Uzay Yolcuları Film</title>
+  </programme>
+  <programme channel="sinema_2" start="20260904231500 +0300" stop="20260905011500 +0300">
+    <title lang="tr">Kötülük Diye Bir Şey Yok Film</title>
+  </programme>
+  <programme channel="sinema_komedi" start="20260904231500 +0300" stop="20260905013000 +0300">
+    <title lang="tr">Molly Singer'ın Yeniden Eğitimi Film</title>
+  </programme>
+  <programme channel="sinema_komedi_2" start="20260904231500 +0300" stop="20260905010000 +0300">
+    <title lang="tr">Aşk Çeşmesi Film</title>
+  </programme>
+  <programme channel="sinema_aile" start="20260904233000 +0300" stop="20260905011500 +0300">
+    <title lang="tr">Dipdip: Bir Okyanus Macerası Film</title>
+  </programme>
+  <programme channel="sinema_aile_2" start="20260904233000 +0300" stop="20260905011500 +0300">
+    <title lang="tr">Saftirik: İşte Şimdi Yandık Film</title>
+  </programme>
+  <programme channel="sinema_tv" start="20260904233000 +0300" stop="20260905011500 +0300">
+    <title lang="tr">Disco Boy Film</title>
+  </programme>
+  <programme channel="sinema_yerli_2" start="20260904233000 +0300" stop="20260905020000 +0300">
+    <title lang="tr">Demir Kadın: Neslican Film</title>
+  </programme>
+  <programme channel="sinema_1002" start="20260904234500 +0300" stop="20260905020000 +0300">
+    <title lang="tr">Kefernahum Film</title>
+  </programme>
+  <programme channel="sinema_aksiyon_2" start="20260904234500 +0300" stop="20260905020000 +0300">
+    <title lang="tr">Uzay Yolcuları Film</title>
+  </programme>
+  <programme channel="tarih_tv" start="20260904235500 +0300" stop="20260905003500 +0300">
+    <title lang="tr">Kuzey Yıldızı İbn Fadlan Ve İdil Bulgarları Yaşam</title>
+  </programme>
+</tv>
