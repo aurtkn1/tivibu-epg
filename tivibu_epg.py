@@ -1,12 +1,10 @@
 import re
 import html
 import urllib.request
-import urllib.error
-from html.parser import HTMLParser
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from collections import defaultdict
+from html.parser import HTMLParser
+from collections import OrderedDict
 from xml.etree.ElementTree import Element, SubElement, ElementTree
 
 
@@ -19,8 +17,6 @@ LIVE_URL = f"{BASE_URL}/canli-tv"
 
 OUTPUT_FILE = "epg.xml"
 
-WORKERS = 12
-
 TURKEY_TZ = ZoneInfo("Europe/Istanbul")
 
 USER_AGENT = (
@@ -29,17 +25,20 @@ USER_AGENT = (
     "Chrome/131.0.0.0 Safari/537.36"
 )
 
-TODAY = datetime.now(
-    TURKEY_TZ
-).date()
+
+# ==============================================================
+# TARİH
+# ==============================================================
 
 NOW = datetime.now(
     TURKEY_TZ
 )
 
+TODAY = NOW.date()
+
 
 # ==============================================================
-# TEMEL
+# YARDIMCILAR
 # ==============================================================
 
 def clean_text(value):
@@ -58,11 +57,17 @@ def normalize_key(value):
 
     replacements = {
         "ı": "i",
+        "İ": "i",
         "ş": "s",
+        "Ş": "s",
         "ğ": "g",
+        "Ğ": "g",
         "ü": "u",
+        "Ü": "u",
         "ö": "o",
+        "Ö": "o",
         "ç": "c",
+        "Ç": "c",
         "’": "",
         "'": "",
     }
@@ -161,7 +166,6 @@ def valid_title(title):
         "TRT 1 CANLI İZLE",
         "GİRİŞ YAP",
         "ÜYE OL",
-        "BENİM KANALIM",
     }
 
     if title.upper() in bad:
@@ -170,11 +174,19 @@ def valid_title(title):
     return True
 
 
+def xml_datetime(dt):
+    return (
+        dt.strftime("%Y%m%d%H%M%S")
+        + " +0300"
+    )
+
+
 # ==============================================================
 # HTTP
 # ==============================================================
 
-def fetch_url(url, timeout=25):
+def fetch_page(url):
+
     request = urllib.request.Request(
         url,
         headers={
@@ -184,33 +196,26 @@ def fetch_url(url, timeout=25):
                 "application/xml;q=0.9,*/*;q=0.8"
             ),
             "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
-            "Connection": "keep-alive",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
         }
     )
 
-    try:
+    with urllib.request.urlopen(
+        request,
+        timeout=45
+    ) as response:
 
-        with urllib.request.urlopen(
-            request,
-            timeout=timeout
-        ) as response:
+        data = response.read()
 
-            data = response.read()
+        charset = (
+            response.headers.get_content_charset()
+            or "utf-8"
+        )
 
-            charset = response.headers.get_content_charset()
-
-            if not charset:
-                charset = "utf-8"
-
-            return data.decode(
-                charset,
-                errors="replace"
-            )
-
-    except Exception as e:
-
-        raise RuntimeError(
-            f"{url} -> {e}"
+        return data.decode(
+            charset,
+            errors="replace"
         )
 
 
@@ -227,6 +232,7 @@ class LinkParser(HTMLParser):
 
         self.links = []
 
+        self.in_anchor = False
         self.current_href = None
         self.current_text = []
 
@@ -239,21 +245,21 @@ class LinkParser(HTMLParser):
         if tag.lower() != "a":
             return
 
-        attrs_dict = dict(
+        attrs = dict(
             attrs
         )
 
+        self.in_anchor = True
+
         self.current_href = (
-            attrs_dict.get(
-                "href"
-            )
+            attrs.get("href")
         )
 
         self.current_text = []
 
     def handle_data(self, data):
 
-        if self.current_href is not None:
+        if self.in_anchor:
 
             self.current_text.append(
                 data
@@ -264,7 +270,7 @@ class LinkParser(HTMLParser):
         if tag.lower() != "a":
             return
 
-        if self.current_href is not None:
+        if self.in_anchor:
 
             text = clean_text(
                 " ".join(
@@ -274,9 +280,10 @@ class LinkParser(HTMLParser):
 
             self.links.append({
                 "href": self.current_href,
-                "text": text,
+                "text": text
             })
 
+        self.in_anchor = False
         self.current_href = None
         self.current_text = []
 
@@ -293,7 +300,7 @@ def parse_links(source):
 
 
 # ==============================================================
-# KANALLARI ANA SAYFADAN BUL
+# KANALLARI ÇIKAR
 # ==============================================================
 
 def collect_channels(source):
@@ -302,12 +309,14 @@ def collect_channels(source):
         source
     )
 
-    channels = {}
+    channels = OrderedDict()
 
     for link in links:
 
         href = link["href"]
-        text = link["text"]
+        text = clean_text(
+            link["text"]
+        )
 
         if not href or not text:
             continue
@@ -317,11 +326,12 @@ def collect_channels(source):
         ):
             continue
 
-        # Program linklerini alma.
+        # Program linkleri de /kanallar/ kullanıyor.
+        # Saat oku varsa programdır.
         if "→" in text:
             continue
 
-        if " - " in text and re.search(
+        if re.search(
             r"\d{1,2}:\d{2}",
             text
         ):
@@ -337,44 +347,88 @@ def collect_channels(source):
             .rstrip("/")
         )
 
-        name = text
-
-        if not valid_channel(name):
+        if not re.search(
+            r"/kanallar/[^/?#]+$",
+            href
+        ):
             continue
 
-        # URL son parçasından /kanal/ olmayan şeyleri ele.
-        path = href.rstrip("/").split(
-            "/"
-        )[-1]
-
-        if not path:
+        if not valid_channel(text):
             continue
 
         key = normalize_key(
-            name
+            text
         )
-
-        if not key:
-            continue
 
         if key in channels:
             continue
 
         channels[key] = {
-            "name": name,
+            "name": text,
             "url": href,
-            "id": make_xml_id(name),
+            "id": make_xml_id(text),
         }
 
     return channels
 
 
 # ==============================================================
-# PROGRAM SATIRI
-#
-# Örnek:
-#
-# Kanal D Ana Haber Aktüalite - 19:00 → 20:00 Canlı
+# PROGRAM LİNKLERİNİ BUL
+# ==============================================================
+
+def collect_program_links(source):
+
+    links = parse_links(
+        source
+    )
+
+    programs = []
+
+    for link in links:
+
+        href = link["href"]
+        text = clean_text(
+            link["text"]
+        )
+
+        if not href or not text:
+            continue
+
+        if not href.startswith(
+            "/kanallar/"
+        ):
+            continue
+
+        if "→" not in text:
+            continue
+
+        if not re.search(
+            r"\d{1,2}:\d{2}\s*→\s*\d{1,2}:\d{2}",
+            text
+        ):
+            continue
+
+        if href.startswith("/"):
+            href = BASE_URL + href
+
+        href = (
+            href
+            .split("?", 1)[0]
+            .split("#", 1)[0]
+            .rstrip("/")
+            .lower()
+        )
+
+        programs.append({
+            "url": href,
+            "text": text,
+        })
+
+    return programs
+
+
+# ==============================================================
+# PROGRAM PARSE
 # ==============================================================
 
 PROGRAM_RE = re.compile(
@@ -403,7 +457,7 @@ PROGRAM_RE = re.compile(
 )
 
 
-def parse_program_line(text):
+def parse_program(text):
 
     text = clean_text(
         text
@@ -417,288 +471,144 @@ def parse_program_line(text):
         return None
 
     title = clean_text(
-        match.group(
-            "title"
-        )
+        match.group("title")
     )
 
     if not valid_title(title):
         return None
 
+    sh = int(
+        match.group("sh")
+    )
+
+    sm = int(
+        match.group("sm")
+    )
+
+    eh = int(
+        match.group("eh")
+    )
+
+    em = int(
+        match.group("em")
+    )
+
     return {
         "title": title,
-        "start_hour": int(
-            match.group("sh")
-        ),
-        "start_minute": int(
-            match.group("sm")
-        ),
-        "end_hour": int(
-            match.group("eh")
-        ),
-        "end_minute": int(
-            match.group("em")
-        ),
+        "start_hour": sh,
+        "start_minute": sm,
+        "end_hour": eh,
+        "end_minute": em,
     }
 
 
 # ==============================================================
-# PROGRAM TARİHLERİNİ OLUŞTUR
-#
-# Kanal sayfasında örneğin:
-#
-# 23:55 -> 00:35
-# 00:35 -> 01:10
-# 01:10 -> 02:15
-#
-# ilk kayıt önceki geceye ait olabilir.
-#
-# Bu yüzden saat akışını takip ediyoruz.
+# BUGÜNÜN PROGRAMINA DÖNÜŞTÜR
 # ==============================================================
 
-def convert_schedule_to_programs(
-    channel_name,
-    entries
+def convert_program(
+    channel,
+    parsed
 ):
 
-    if not entries:
-        return []
-
-    # ----------------------------------------------------------
-    # İlk programın gününü tahmin et.
-    #
-    # İlk saat şu anki saatten ilerideyse genellikle
-    # kanal sayfası önceki gecenin devam eden programıyla
-    # başlıyor.
-    # ----------------------------------------------------------
-
-    first = entries[0]
-
-    first_time = (
-        first["start_hour"],
-        first["start_minute"]
+    start = datetime(
+        TODAY.year,
+        TODAY.month,
+        TODAY.day,
+        parsed["start_hour"],
+        parsed["start_minute"],
+        tzinfo=TURKEY_TZ
     )
 
-    now_time = (
-        NOW.hour,
-        NOW.minute
+    end = datetime(
+        TODAY.year,
+        TODAY.month,
+        TODAY.day,
+        parsed["end_hour"],
+        parsed["end_minute"],
+        tzinfo=TURKEY_TZ
     )
 
-    current_date = TODAY
-
-    if first_time > now_time:
-
-        current_date = (
-            TODAY
-            - timedelta(
-                days=1
-            )
+    # Örneğin:
+    # 23:45 -> 01:30
+    # Bitiş ertesi gündür.
+    if end <= start:
+        end += timedelta(
+            days=1
         )
 
-    programs = []
-
-    previous_minutes = None
-
-    for entry in entries:
-
-        start_minutes = (
-            entry["start_hour"] * 60
-            + entry["start_minute"]
-        )
-
-        # ------------------------------------------------------
-        # Saat geriye döndüyse gece yarısı geçildi.
-        # ------------------------------------------------------
-
-        if (
-            previous_minutes is not None
-            and start_minutes < previous_minutes
-        ):
-
-            current_date += timedelta(
-                days=1
-            )
-
-        start = datetime(
-            current_date.year,
-            current_date.month,
-            current_date.day,
-            entry["start_hour"],
-            entry["start_minute"],
-            tzinfo=TURKEY_TZ
-        )
-
-        end_date = current_date
-
-        end_minutes = (
-            entry["end_hour"] * 60
-            + entry["end_minute"]
-        )
-
-        if end_minutes <= start_minutes:
-
-            end_date = (
-                current_date
-                + timedelta(
-                    days=1
-                )
-            )
-
-        end = datetime(
-            end_date.year,
-            end_date.month,
-            end_date.day,
-            entry["end_hour"],
-            entry["end_minute"],
-            tzinfo=TURKEY_TZ
-        )
-
-        programs.append({
-            "channel": channel_name,
-            "title": entry["title"],
-            "start": start,
-            "end": end,
-        })
-
-        previous_minutes = (
-            start_minutes
-        )
-
-    return programs
+    return {
+        "channel": channel["name"],
+        "title": parsed["title"],
+        "start": start,
+        "end": end,
+    }
 
 
 # ==============================================================
-# KANAL SAYFASINI PARSE ET
+# PROGRAMLARI KANALA EŞLEŞTİR
 # ==============================================================
 
-def scrape_channel(channel):
+def build_programs(
+    source,
+    channels
+):
 
-    url = channel["url"]
+    channel_url_map = {}
 
-    try:
+    for channel in channels.values():
 
-        source = fetch_url(
-            url,
-            timeout=30
-        )
+        channel_url_map[
+            channel["url"]
+            .lower()
+            .rstrip("/")
+        ] = channel
 
-    except Exception as e:
-
-        return {
-            "channel": channel,
-            "programs": [],
-            "error": str(e),
-        }
-
-    links = parse_links(
+    links = collect_program_links(
         source
     )
 
-    entries = []
+    print(
+        f"Toplam program bağlantısı: "
+        f"{len(links)}"
+    )
+
+    programs = []
+
+    seen = set()
 
     for link in links:
 
-        text = clean_text(
+        channel = channel_url_map.get(
+            link["url"]
+        )
+
+        if channel is None:
+            continue
+
+        parsed = parse_program(
             link["text"]
         )
 
-        if not text:
+        if parsed is None:
             continue
 
-        if "→" not in text:
-            continue
-
-        # Program satırı olmalı.
-        if not re.search(
-            r"\d{1,2}:\d{2}\s*→\s*\d{1,2}:\d{2}",
-            text
-        ):
-            continue
-
-        parsed = parse_program_line(
-            text
-        )
-
-        if not parsed:
-            continue
-
-        entries.append(
+        program = convert_program(
+            channel,
             parsed
         )
 
-    # ----------------------------------------------------------
-    # Aynı programları tekrar eden HTML linklerini temizle.
-    # ----------------------------------------------------------
+        # ------------------------------------------------------
+        # BUGÜN BAŞLAYAN PROGRAMLAR
+        #
+        # 05.09 00:xx'e taşan kayıtlar bugünün XML'ine
+        # dahil edilmeyecek.
+        #
+        # Ancak 04.09 23:xx'te başlayan programın stop'u
+        # 05.09 olabilir.
+        # ------------------------------------------------------
 
-    unique_entries = []
-
-    seen = set()
-
-    for entry in entries:
-
-        key = (
-            entry["title"],
-            entry["start_hour"],
-            entry["start_minute"],
-            entry["end_hour"],
-            entry["end_minute"],
-        )
-
-        if key in seen:
-            continue
-
-        seen.add(key)
-
-        unique_entries.append(
-            entry
-        )
-
-    programs = convert_schedule_to_programs(
-        channel["name"],
-        unique_entries
-    )
-
-    # ----------------------------------------------------------
-    # SADECE BUGÜN
-    # ----------------------------------------------------------
-
-    programs = [
-        program
-        for program in programs
-        if program["start"].date()
-        == TODAY
-    ]
-
-    return {
-        "channel": channel,
-        "programs": programs,
-        "error": None,
-    }
-
-
-# ==============================================================
-# PROGRAMLARI TEMİZLE
-# ==============================================================
-
-def clean_programs(programs):
-
-    result = []
-
-    seen = set()
-
-    for program in programs:
-
-        title = clean_text(
-            program["title"]
-        )
-
-        if not valid_title(title):
-            continue
-
-        if (
-            program["start"].date()
-            != TODAY
-        ):
+        if program["start"].date() != TODAY:
             continue
 
         key = (
@@ -707,8 +617,8 @@ def clean_programs(programs):
             ),
             program["start"],
             normalize_key(
-                title
-            ),
+                program["title"]
+            )
         )
 
         if key in seen:
@@ -718,28 +628,31 @@ def clean_programs(programs):
             key
         )
 
-        result.append({
-            "channel": program["channel"],
-            "title": title,
-            "start": program["start"],
-            "end": program["end"],
-        })
+        programs.append(
+            program
+        )
 
-    result.sort(
+    # ----------------------------------------------------------
+    # KANAL + SAAT SIRASI
+    # ----------------------------------------------------------
+
+    programs.sort(
         key=lambda x: (
-            x["channel"],
+            normalize_key(
+                x["channel"]
+            ),
             x["start"]
         )
     )
 
-    return result
+    return programs
 
 
 # ==============================================================
-# BİTİŞ SAATLERİNİ GÜVENLİ HALE GETİR
+# KANAL İÇİN ÇAKIŞMA / BİTİŞ DÜZELTME
 # ==============================================================
 
-def fix_end_times(programs):
+def fix_program_times(programs):
 
     grouped = defaultdict(list)
 
@@ -761,12 +674,25 @@ def fix_end_times(programs):
             key=lambda x: x["start"]
         )
 
-        for i, program in enumerate(
+        for index, program in enumerate(
             items
         ):
 
             start = program["start"]
             end = program["end"]
+
+            if index + 1 < len(items):
+
+                next_start = items[
+                    index + 1
+                ]["start"]
+
+                # Bir sonraki program mevcut programdan önce
+                # başlıyorsa veriyi bozma.
+                if next_start > start:
+
+                    if next_start < end:
+                        end = next_start
 
             if end <= start:
 
@@ -777,24 +703,11 @@ def fix_end_times(programs):
                     )
                 )
 
-            # Bir sonraki program başlangıcı mevcut
-            # bitişten daha erkense, mevcut bitişi düzelt.
-            if i + 1 < len(items):
-
-                next_start = items[
-                    i + 1
-                ]["start"]
-
-                if (
-                    next_start > start
-                    and
-                    next_start < end
-                ):
-                    end = next_start
-
+            # Bir günlük EPG'de saçma uzunlukları önle.
             if end - start > timedelta(
                 hours=12
             ):
+
                 end = (
                     start
                     + timedelta(
@@ -812,7 +725,9 @@ def fix_end_times(programs):
     result.sort(
         key=lambda x: (
             x["start"],
-            x["channel"]
+            normalize_key(
+                x["channel"]
+            )
         )
     )
 
@@ -828,7 +743,7 @@ def write_xml(
     programs
 ):
 
-    used = {
+    used_channels = {
         normalize_key(
             program["channel"]
         )
@@ -839,13 +754,10 @@ def write_xml(
 
     for key, channel in channels.items():
 
-        if key not in used:
+        if key not in used_channels:
             continue
 
-        if (
-            channel["name"].upper()
-            == "BENİM KANALIM"
-        ):
+        if channel["name"].upper() == "BENİM KANALIM":
             continue
 
         if (
@@ -858,10 +770,6 @@ def write_xml(
             channel
         )
 
-    final_channels.sort(
-        key=lambda x: x["name"].upper()
-    )
-
     tv = Element(
         "tv",
         {
@@ -873,12 +781,12 @@ def write_xml(
     )
 
     # ----------------------------------------------------------
-    # CHANNEL
+    # KANALLAR
     # ----------------------------------------------------------
 
     for channel in final_channels:
 
-        element = SubElement(
+        channel_element = SubElement(
             tv,
             "channel",
             {
@@ -886,15 +794,15 @@ def write_xml(
             }
         )
 
-        display = SubElement(
-            element,
+        display_name = SubElement(
+            channel_element,
             "display-name",
             {
                 "lang": "tr"
             }
         )
 
-        display.text = channel["name"]
+        display_name.text = channel["name"]
 
     channel_ids = {
         normalize_key(
@@ -904,7 +812,7 @@ def write_xml(
     }
 
     # ----------------------------------------------------------
-    # PROGRAM
+    # PROGRAMLAR
     # ----------------------------------------------------------
 
     for program in programs:
@@ -918,30 +826,22 @@ def write_xml(
         if not channel_id:
             continue
 
-        element = SubElement(
+        programme = SubElement(
             tv,
             "programme",
             {
                 "channel": channel_id,
-                "start": (
+                "start": xml_datetime(
                     program["start"]
-                    .strftime(
-                        "%Y%m%d%H%M%S"
-                    )
-                    + " +0300"
                 ),
-                "stop": (
+                "stop": xml_datetime(
                     program["end"]
-                    .strftime(
-                        "%Y%m%d%H%M%S"
-                    )
-                    + " +0300"
                 ),
             }
         )
 
         title = SubElement(
-            element,
+            programme,
             "title",
             {
                 "lang": "tr"
@@ -949,10 +849,6 @@ def write_xml(
         )
 
         title.text = program["title"]
-
-    # ----------------------------------------------------------
-    # YAZ
-    # ----------------------------------------------------------
 
     tree = ElementTree(
         tv
@@ -990,181 +886,165 @@ def main():
     print("=" * 70)
 
     print(
-        "Türkiye tarihi: "
+        f"Tarih: "
         f"{TODAY.strftime('%d.%m.%Y')}"
     )
 
     print(
-        "Saat: "
+        f"Saat: "
         f"{NOW.strftime('%H:%M:%S')}"
     )
 
     print("=" * 70)
 
-    # ==========================================================
-    # 158 KANALI TEK SEFER BUL
-    # ==========================================================
+    # ----------------------------------------------------------
+    # ANA SAYFAYI TEK SEFER ÇEK
+    # ----------------------------------------------------------
 
     print(
-        "Ana kanal listesi alınıyor..."
+        "Tivibu canlı TV sayfası alınıyor..."
     )
 
     try:
 
-        main_source = fetch_url(
-            LIVE_URL,
-            timeout=40
+        source = fetch_page(
+            LIVE_URL
         )
 
     except Exception as e:
 
         print(
-            f"Ana sayfa alınamadı: {e}"
+            f"Sayfa alınamadı: {e}"
         )
 
         return
 
+    # ----------------------------------------------------------
+    # KANALLAR
+    # ----------------------------------------------------------
+
     channels = collect_channels(
-        main_source
+        source
     )
 
+    print()
     print(
         f"Bulunan gerçek kanal: "
         f"{len(channels)}"
     )
 
-    if not channels:
+    # ----------------------------------------------------------
+    # PROGRAMLAR
+    # ----------------------------------------------------------
 
-        print(
-            "Hiç kanal bulunamadı."
-        )
-
-        return
-
-    # ==========================================================
-    # 158 KANAL SAYFASINI PARALEL AL
-    # ==============================================================
-
-    all_programs = []
-
-    successful = 0
-    failed = 0
-
-    channel_list = list(
-        channels.values()
+    programs = build_programs(
+        source,
+        channels
     )
 
     print()
     print(
-        f"{len(channel_list)} kanalın "
-        "GÜNLÜK programı alınıyor..."
+        f"Bugünün ham programı: "
+        f"{len(programs)}"
     )
 
-    with ThreadPoolExecutor(
-        max_workers=WORKERS
-    ) as executor:
+    # ----------------------------------------------------------
+    # PROGRAM SAATLERİ
+    # ----------------------------------------------------------
 
-        future_map = {
-            executor.submit(
-                scrape_channel,
-                channel
-            ):
-                channel
-            for channel in channel_list
-        }
-
-        completed = 0
-
-        for future in as_completed(
-            future_map
-        ):
-
-            channel = future_map[
-                future
-            ]
-
-            completed += 1
-
-            try:
-
-                result = future.result()
-
-                programs = result[
-                    "programs"
-                ]
-
-                if result["error"]:
-
-                    failed += 1
-
-                    print(
-                        f"[{completed}/{len(channel_list)}] "
-                        f"{channel['name']}: "
-                        f"HATA"
-                    )
-
-                    continue
-
-                successful += 1
-
-                all_programs.extend(
-                    programs
-                )
-
-                print(
-                    f"[{completed}/{len(channel_list)}] "
-                    f"{channel['name']}: "
-                    f"{len(programs)} program"
-                )
-
-            except Exception as e:
-
-                failed += 1
-
-                print(
-                    f"[{completed}/{len(channel_list)}] "
-                    f"{channel['name']}: "
-                    f"HATA - {e}"
-                )
-
-    # ==========================================================
-    # TEMİZLE
-    # ==========================================================
-
-    all_programs = clean_programs(
-        all_programs
+    programs = fix_program_times(
+        programs
     )
 
-    all_programs = fix_end_times(
-        all_programs
-    )
-
-    # ==========================================================
-    # KANAL İSTATİSTİKLERİ
-    # ==============================================================
+    # ----------------------------------------------------------
+    # KANAL SAYILARI
+    # ----------------------------------------------------------
 
     counts = defaultdict(
         int
     )
 
-    for program in all_programs:
+    for program in programs:
 
         counts[
             program["channel"]
         ] += 1
 
-    # ==========================================================
+    print()
+    print("=" * 70)
+    print("KANAL PROGRAM KONTROLÜ")
+    print("=" * 70)
+
+    for channel_name in sorted(
+        counts
+    ):
+
+        print(
+            f"{channel_name}: "
+            f"{counts[channel_name]}"
+        )
+
+    # ----------------------------------------------------------
+    # ÖRNEKLER
+    # ----------------------------------------------------------
+
+    print()
+    print("=" * 70)
+    print("ÖRNEK PROGRAMLAR")
+    print("=" * 70)
+
+    for test_channel in [
+        "KANAL D",
+        "ATV",
+        "TRT 1",
+        "TRT SPOR",
+        "TRT 3 SPOR",
+        "CNN TÜRK",
+        "TİVİBU SPOR",
+        "SİNEMA TV",
+        "SİNEMA 2",
+    ]:
+
+        test_key = normalize_key(
+            test_channel
+        )
+
+        matches = [
+            p
+            for p in programs
+            if normalize_key(
+                p["channel"]
+            ) == test_key
+        ]
+
+        print(
+            f"{test_channel}: "
+            f"{len(matches)} program"
+        )
+
+        for program in matches[:8]:
+
+            print(
+                "    "
+                f"{program['start'].strftime('%H:%M')}"
+                f" - "
+                f"{program['end'].strftime('%H:%M')}"
+                f" | "
+                f"{program['title']}"
+            )
+
+    # ----------------------------------------------------------
     # XML
-    # ==============================================================
+    # ----------------------------------------------------------
 
     xml_channels = write_xml(
         channels,
-        all_programs
+        programs
     )
 
-    # ==========================================================
+    # ----------------------------------------------------------
     # SONUÇ
-    # ==============================================================
+    # ----------------------------------------------------------
 
     print()
     print("=" * 70)
@@ -1172,45 +1052,25 @@ def main():
     print("=" * 70)
 
     print(
-        f"Toplam keşfedilen kanal: "
+        f"Keşfedilen kanal: "
         f"{len(channels)}"
     )
 
     print(
-        f"Başarılı kanal sayfası: "
-        f"{successful}"
-    )
-
-    print(
-        f"Hatalı kanal sayfası: "
-        f"{failed}"
-    )
-
-    print(
-        f"XML kanal: "
+        f"EPG kanal: "
         f"{xml_channels}"
     )
 
     print(
         f"Toplam program: "
-        f"{len(all_programs)}"
+        f"{len(programs)}"
     )
 
-    print()
     print(
-        "KANAL PROGRAM SAYILARI:"
+        f"Tarih: "
+        f"{TODAY.strftime('%d.%m.%Y')}"
     )
 
-    for channel_name in sorted(
-        counts
-    ):
-
-        print(
-            f"  {channel_name}: "
-            f"{counts[channel_name]}"
-        )
-
-    print()
     print(
         f"{OUTPUT_FILE} oluşturuldu."
     )
