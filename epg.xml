@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <tv generator-info-name="Tivibu Günlük EPG" generator-info-url="https://www.tivibu.com.tr/canli-tv">
-  <channel id="sinema_yerli">
-    <display-name lang="tr">SİNEMA YERLİ</display-name>
-  </channel>
-  <channel id="sinema_komedi">
-    <display-name lang="tr">SİNEMA KOMEDİ</display-name>
-  </channel>
   <channel id="tivibu_tanitim">
     <display-name lang="tr">TİVİBU TANITIM</display-name>
+  </channel>
+  <channel id="sinema_yerli_2">
+    <display-name lang="tr">SİNEMA YERLİ 2</display-name>
+  </channel>
+  <channel id="sinema_aksiyon_2">
+    <display-name lang="tr">SİNEMA AKSİYON 2</display-name>
   </channel>
   <channel id="sinema_aile_2">
     <display-name lang="tr">SİNEMA AİLE 2</display-name>
@@ -15,44 +15,44 @@
   <channel id="tarih_tv">
     <display-name lang="tr">TARİH TV</display-name>
   </channel>
-  <channel id="sinema_yerli_2">
-    <display-name lang="tr">SİNEMA YERLİ 2</display-name>
-  </channel>
   <channel id="sinema_aksiyon">
     <display-name lang="tr">SİNEMA AKSİYON</display-name>
-  </channel>
-  <channel id="sinema_komedi_2">
-    <display-name lang="tr">SİNEMA KOMEDİ 2</display-name>
-  </channel>
-  <channel id="sinema_aile">
-    <display-name lang="tr">SİNEMA AİLE</display-name>
-  </channel>
-  <channel id="sinema_tv">
-    <display-name lang="tr">SİNEMA TV</display-name>
-  </channel>
-  <channel id="sinema_aksiyon_2">
-    <display-name lang="tr">SİNEMA AKSİYON 2</display-name>
   </channel>
   <channel id="sinema_2">
     <display-name lang="tr">SİNEMA 2</display-name>
   </channel>
+  <channel id="sinema_yerli">
+    <display-name lang="tr">SİNEMA YERLİ</display-name>
+  </channel>
+  <channel id="sinema_komedi">
+    <display-name lang="tr">SİNEMA KOMEDİ</display-name>
+  </channel>
+  <channel id="sinema_aile">
+    <display-name lang="tr">SİNEMA AİLE</display-name>
+  </channel>
+  <channel id="sinema_komedi_2">
+    <display-name lang="tr">SİNEMA KOMEDİ 2</display-name>
+  </channel>
+  <channel id="sinema_tv">
+    <display-name lang="tr">SİNEMA TV</display-name>
+  </channel>
+  <channel id="now">
+    <display-name lang="tr">NOW</display-name>
+  </channel>
   <channel id="filmscreen_international">
     <display-name lang="tr">FILMSCREEN INTERNATIONAL</display-name>
+  </channel>
+  <channel id="atv">
+    <display-name lang="tr">ATV</display-name>
+  </channel>
+  <channel id="cosmo_en">
+    <display-name lang="tr">Cosmo EN</display-name>
   </channel>
   <channel id="trt_1">
     <display-name lang="tr">TRT 1</display-name>
   </channel>
-  <channel id="sinema_1002">
-    <display-name lang="tr">SİNEMA 1002</display-name>
-  </channel>
-  <channel id="bbc_first">
-    <display-name lang="tr">BBC FIRST</display-name>
-  </channel>
-  <channel id="show_tv">
-    <display-name lang="tr">SHOW TV</display-name>
-  </channel>
-  <channel id="epic_drama">
-    <display-name lang="tr">EPIC DRAMA</display-name>
+  <channel id="kanal_d">
+    <display-name lang="tr">KANAL D</display-name>
   </channel>
   <channel id="fx">
     <display-name lang="tr">FX</display-name>
@@ -60,71 +60,71 @@
   <channel id="sinema_1001">
     <display-name lang="tr">SİNEMA 1001</display-name>
   </channel>
-  <channel id="cosmo_en">
-    <display-name lang="tr">Cosmo EN</display-name>
+  <channel id="epic_drama">
+    <display-name lang="tr">EPIC DRAMA</display-name>
   </channel>
-  <channel id="atv">
-    <display-name lang="tr">ATV</display-name>
+  <channel id="bbc_first">
+    <display-name lang="tr">BBC FIRST</display-name>
   </channel>
-  <channel id="kanal_d">
-    <display-name lang="tr">KANAL D</display-name>
+  <channel id="show_tv">
+    <display-name lang="tr">SHOW TV</display-name>
   </channel>
-  <channel id="now">
-    <display-name lang="tr">NOW</display-name>
-  </channel>
-  <channel id="trt_haber">
-    <display-name lang="tr">TRT HABER</display-name>
-  </channel>
-  <channel id="tv8">
-    <display-name lang="tr">TV8</display-name>
-  </channel>
-  <channel id="a_haber">
-    <display-name lang="tr">A HABER</display-name>
-  </channel>
-  <channel id="360">
-    <display-name lang="tr">360</display-name>
-  </channel>
-  <channel id="haberturk">
-    <display-name lang="tr">HABERTÜRK</display-name>
-  </channel>
-  <channel id="bloomberg_ht">
-    <display-name lang="tr">BLOOMBERG HT</display-name>
-  </channel>
-  <channel id="cnn_turk">
-    <display-name lang="tr">CNN TÜRK</display-name>
-  </channel>
-  <channel id="ntv">
-    <display-name lang="tr">NTV</display-name>
+  <channel id="sinema_1002">
+    <display-name lang="tr">SİNEMA 1002</display-name>
   </channel>
   <channel id="24">
     <display-name lang="tr">24</display-name>
   </channel>
-  <channel id="kanal_7">
-    <display-name lang="tr">KANAL 7</display-name>
+  <channel id="tv8">
+    <display-name lang="tr">TV8</display-name>
   </channel>
   <channel id="star_tv">
     <display-name lang="tr">STAR TV</display-name>
   </channel>
+  <channel id="cnn_turk">
+    <display-name lang="tr">CNN TÜRK</display-name>
+  </channel>
+  <channel id="bloomberg_ht">
+    <display-name lang="tr">BLOOMBERG HT</display-name>
+  </channel>
+  <channel id="360">
+    <display-name lang="tr">360</display-name>
+  </channel>
+  <channel id="kanal_7">
+    <display-name lang="tr">KANAL 7</display-name>
+  </channel>
+  <channel id="a_haber">
+    <display-name lang="tr">A HABER</display-name>
+  </channel>
   <channel id="beyaz_tv">
     <display-name lang="tr">BEYAZ TV</display-name>
   </channel>
-  <channel id="a2">
-    <display-name lang="tr">A2</display-name>
+  <channel id="trt_haber">
+    <display-name lang="tr">TRT HABER</display-name>
   </channel>
-  <channel id="a_para">
-    <display-name lang="tr">A PARA</display-name>
+  <channel id="haberturk">
+    <display-name lang="tr">HABERTÜRK</display-name>
   </channel>
-  <channel id="ulke_tv">
-    <display-name lang="tr">ÜLKE TV</display-name>
-  </channel>
-  <channel id="haber_global">
-    <display-name lang="tr">HABER GLOBAL</display-name>
+  <channel id="ntv">
+    <display-name lang="tr">NTV</display-name>
   </channel>
   <channel id="cnbc_e">
     <display-name lang="tr">CNBC-e</display-name>
   </channel>
-  <channel id="tvnet">
-    <display-name lang="tr">TVNET</display-name>
+  <channel id="haber_global">
+    <display-name lang="tr">HABER GLOBAL</display-name>
+  </channel>
+  <channel id="akit_tv">
+    <display-name lang="tr">AKİT TV</display-name>
+  </channel>
+  <channel id="tv_100">
+    <display-name lang="tr">TV 100</display-name>
+  </channel>
+  <channel id="ulke_tv">
+    <display-name lang="tr">ÜLKE TV</display-name>
+  </channel>
+  <channel id="diyanet_tv">
+    <display-name lang="tr">DİYANET TV</display-name>
   </channel>
   <channel id="benguturk">
     <display-name lang="tr">BENGÜTÜRK</display-name>
@@ -132,107 +132,119 @@
   <channel id="tgrt_haber">
     <display-name lang="tr">TGRT HABER</display-name>
   </channel>
-  <channel id="diyanet_tv">
-    <display-name lang="tr">DİYANET TV</display-name>
+  <channel id="tvnet">
+    <display-name lang="tr">TVNET</display-name>
   </channel>
-  <channel id="akit_tv">
-    <display-name lang="tr">AKİT TV</display-name>
+  <channel id="a_para">
+    <display-name lang="tr">A PARA</display-name>
+  </channel>
+  <channel id="a2">
+    <display-name lang="tr">A2</display-name>
   </channel>
   <channel id="tv2">
     <display-name lang="tr">TV2</display-name>
   </channel>
-  <channel id="tv_100">
-    <display-name lang="tr">TV 100</display-name>
-  </channel>
-  <channel id="vav_tv">
-    <display-name lang="tr">VAV TV</display-name>
+  <channel id="dmax">
+    <display-name lang="tr">DMAX</display-name>
   </channel>
   <channel id="tlc">
     <display-name lang="tr">TLC</display-name>
   </channel>
-  <channel id="ulusal_1">
-    <display-name lang="tr">ULUSAL 1</display-name>
-  </channel>
-  <channel id="kon_tv">
-    <display-name lang="tr">KON TV</display-name>
-  </channel>
   <channel id="turkhaber_tv">
     <display-name lang="tr">TÜRKHABER TV</display-name>
-  </channel>
-  <channel id="gzt_tv">
-    <display-name lang="tr">GZT TV</display-name>
-  </channel>
-  <channel id="ekol_tv">
-    <display-name lang="tr">EKOL TV</display-name>
   </channel>
   <channel id="tv4">
     <display-name lang="tr">TV4</display-name>
   </channel>
-  <channel id="dmax">
-    <display-name lang="tr">DMAX</display-name>
-  </channel>
   <channel id="trt_2">
     <display-name lang="tr">TRT 2</display-name>
+  </channel>
+  <channel id="kon_tv">
+    <display-name lang="tr">KON TV</display-name>
+  </channel>
+  <channel id="vav_tv">
+    <display-name lang="tr">VAV TV</display-name>
+  </channel>
+  <channel id="ulusal_1">
+    <display-name lang="tr">ULUSAL 1</display-name>
   </channel>
   <channel id="tv_8_5">
     <display-name lang="tr">TV 8,5</display-name>
   </channel>
+  <channel id="ekol_tv">
+    <display-name lang="tr">EKOL TV</display-name>
+  </channel>
+  <channel id="gzt_tv">
+    <display-name lang="tr">GZT TV</display-name>
+  </channel>
   <channel id="ekoturk">
     <display-name lang="tr">EKOTÜRK</display-name>
-  </channel>
-  <channel id="a_spor">
-    <display-name lang="tr">A SPOR</display-name>
-  </channel>
-  <channel id="szc_tv">
-    <display-name lang="tr">SZC TV</display-name>
-  </channel>
-  <channel id="tivibu_spor_1">
-    <display-name lang="tr">TİVİBU SPOR 1</display-name>
-  </channel>
-  <channel id="tv_5">
-    <display-name lang="tr">TV 5</display-name>
-  </channel>
-  <channel id="tivibu_spor_2">
-    <display-name lang="tr">TİVİBU SPOR 2</display-name>
-  </channel>
-  <channel id="tivibu_spor_3">
-    <display-name lang="tr">TİVİBU SPOR 3</display-name>
-  </channel>
-  <channel id="tivibu_spor_4">
-    <display-name lang="tr">TİVİBU SPOR 4</display-name>
-  </channel>
-  <channel id="eurosport_1">
-    <display-name lang="tr">EUROSPORT 1</display-name>
-  </channel>
-  <channel id="tivibu_spor">
-    <display-name lang="tr">TİVİBU SPOR</display-name>
-  </channel>
-  <channel id="semerkand_tv">
-    <display-name lang="tr">SEMERKAND TV</display-name>
   </channel>
   <channel id="halk_tv">
     <display-name lang="tr">HALK TV</display-name>
   </channel>
+  <channel id="tv_5">
+    <display-name lang="tr">TV 5</display-name>
+  </channel>
   <channel id="eurosport_2">
     <display-name lang="tr">EUROSPORT 2</display-name>
   </channel>
-  <channel id="fb_tv">
-    <display-name lang="tr">FB TV</display-name>
+  <channel id="semerkand_tv">
+    <display-name lang="tr">SEMERKAND TV</display-name>
+  </channel>
+  <channel id="eurosport_1">
+    <display-name lang="tr">EUROSPORT 1</display-name>
+  </channel>
+  <channel id="tivibu_spor_2">
+    <display-name lang="tr">TİVİBU SPOR 2</display-name>
+  </channel>
+  <channel id="szc_tv">
+    <display-name lang="tr">SZC TV</display-name>
+  </channel>
+  <channel id="a_spor">
+    <display-name lang="tr">A SPOR</display-name>
+  </channel>
+  <channel id="tivibu_spor_4">
+    <display-name lang="tr">TİVİBU SPOR 4</display-name>
+  </channel>
+  <channel id="tivibu_spor_1">
+    <display-name lang="tr">TİVİBU SPOR 1</display-name>
+  </channel>
+  <channel id="tivibu_spor_3">
+    <display-name lang="tr">TİVİBU SPOR 3</display-name>
+  </channel>
+  <channel id="tivibu_spor">
+    <display-name lang="tr">TİVİBU SPOR</display-name>
   </channel>
   <channel id="trt_spor">
     <display-name lang="tr">TRT SPOR</display-name>
   </channel>
+  <channel id="fb_tv">
+    <display-name lang="tr">FB TV</display-name>
+  </channel>
   <channel id="trt_spor_yildiz">
     <display-name lang="tr">TRT SPOR YILDIZ</display-name>
+  </channel>
+  <channel id="trt_3_spor">
+    <display-name lang="tr">TRT 3 SPOR</display-name>
   </channel>
   <channel id="fight_network">
     <display-name lang="tr">FIGHT NETWORK</display-name>
   </channel>
+  <channel id="ht_spor_hd">
+    <display-name lang="tr">HT SPOR HD</display-name>
+  </channel>
+  <channel id="cosmo_sports">
+    <display-name lang="tr">COSMO SPORTS</display-name>
+  </channel>
+  <channel id="discovery_channel">
+    <display-name lang="tr">DISCOVERY CHANNEL</display-name>
+  </channel>
   <channel id="trt_belgesel">
     <display-name lang="tr">TRT BELGESEL</display-name>
   </channel>
-  <channel id="trt_3_spor">
-    <display-name lang="tr">TRT 3 SPOR</display-name>
+  <channel id="national_geographic_wild">
+    <display-name lang="tr">NATIONAL GEOGRAPHIC WILD</display-name>
   </channel>
   <channel id="national_geographic">
     <display-name lang="tr">NATIONAL GEOGRAPHIC</display-name>
@@ -240,47 +252,35 @@
   <channel id="habitat_tv">
     <display-name lang="tr">HABİTAT TV</display-name>
   </channel>
-  <channel id="national_geographic_wild">
-    <display-name lang="tr">NATIONAL GEOGRAPHIC WILD</display-name>
-  </channel>
-  <channel id="ht_spor_hd">
-    <display-name lang="tr">HT SPOR HD</display-name>
-  </channel>
-  <channel id="discovery_channel">
-    <display-name lang="tr">DISCOVERY CHANNEL</display-name>
-  </channel>
-  <channel id="cosmo_sports">
-    <display-name lang="tr">COSMO SPORTS</display-name>
-  </channel>
   <channel id="id">
     <display-name lang="tr">ID</display-name>
-  </channel>
-  <channel id="viasat_history">
-    <display-name lang="tr">VIASAT HISTORY</display-name>
-  </channel>
-  <channel id="bbc_earth">
-    <display-name lang="tr">BBC EARTH</display-name>
-  </channel>
-  <channel id="love_nature">
-    <display-name lang="tr">LOVE NATURE</display-name>
-  </channel>
-  <channel id="spacetoon">
-    <display-name lang="tr">SPACETOON</display-name>
-  </channel>
-  <channel id="trt_diyanet_cocuk">
-    <display-name lang="tr">TRT DİYANET ÇOCUK</display-name>
-  </channel>
-  <channel id="cartoonito">
-    <display-name lang="tr">CARTOONITO</display-name>
-  </channel>
-  <channel id="minika_cocuk">
-    <display-name lang="tr">MİNİKA ÇOCUK</display-name>
   </channel>
   <channel id="trt_cocuk">
     <display-name lang="tr">TRT ÇOCUK</display-name>
   </channel>
+  <channel id="bbc_earth">
+    <display-name lang="tr">BBC EARTH</display-name>
+  </channel>
+  <channel id="minika_cocuk">
+    <display-name lang="tr">MİNİKA ÇOCUK</display-name>
+  </channel>
+  <channel id="viasat_history">
+    <display-name lang="tr">VIASAT HISTORY</display-name>
+  </channel>
+  <channel id="love_nature">
+    <display-name lang="tr">LOVE NATURE</display-name>
+  </channel>
+  <channel id="trt_diyanet_cocuk">
+    <display-name lang="tr">TRT DİYANET ÇOCUK</display-name>
+  </channel>
   <channel id="minika_go">
     <display-name lang="tr">MİNİKA GO</display-name>
+  </channel>
+  <channel id="spacetoon">
+    <display-name lang="tr">SPACETOON</display-name>
+  </channel>
+  <channel id="cartoonito">
+    <display-name lang="tr">CARTOONITO</display-name>
   </channel>
   <channel id="disney_junior">
     <display-name lang="tr">DISNEY JUNIOR</display-name>
@@ -288,26 +288,17 @@
   <channel id="moonbug">
     <display-name lang="tr">MOONBUG</display-name>
   </channel>
-  <channel id="nickelodeon">
-    <display-name lang="tr">NICKELODEON</display-name>
-  </channel>
   <channel id="nicktoons">
     <display-name lang="tr">NICKTOONS</display-name>
   </channel>
-  <channel id="cartoon_network">
-    <display-name lang="tr">CARTOON NETWORK</display-name>
-  </channel>
-  <channel id="nick_jr">
-    <display-name lang="tr">NICK JR</display-name>
-  </channel>
-  <channel id="da_vinci">
-    <display-name lang="tr">DA VINCI</display-name>
+  <channel id="nickelodeon">
+    <display-name lang="tr">NICKELODEON</display-name>
   </channel>
   <channel id="trt_genc">
     <display-name lang="tr">TRT GENÇ</display-name>
   </channel>
-  <channel id="trt_kurdi">
-    <display-name lang="tr">TRT KURDİ</display-name>
+  <channel id="cartoon_network">
+    <display-name lang="tr">CARTOON NETWORK</display-name>
   </channel>
   <channel id="babytv">
     <display-name lang="tr">BABYTV</display-name>
@@ -315,26 +306,35 @@
   <channel id="trt_avaz">
     <display-name lang="tr">TRT AVAZ</display-name>
   </channel>
+  <channel id="nick_jr">
+    <display-name lang="tr">NICK JR</display-name>
+  </channel>
   <channel id="trt_turk">
     <display-name lang="tr">TRT TÜRK</display-name>
   </channel>
-  <channel id="tele_1">
-    <display-name lang="tr">TELE 1</display-name>
+  <channel id="da_vinci">
+    <display-name lang="tr">DA VINCI</display-name>
   </channel>
-  <channel id="tivi_6">
-    <display-name lang="tr">TİVİ 6</display-name>
-  </channel>
-  <channel id="tyt_turk">
-    <display-name lang="tr">TYT TÜRK</display-name>
-  </channel>
-  <channel id="trt_muzik">
-    <display-name lang="tr">TRT MÜZİK</display-name>
+  <channel id="trt_kurdi">
+    <display-name lang="tr">TRT KURDİ</display-name>
   </channel>
   <channel id="as_tv">
     <display-name lang="tr">AS TV</display-name>
   </channel>
+  <channel id="tivi_6">
+    <display-name lang="tr">TİVİ 6</display-name>
+  </channel>
+  <channel id="tele_1">
+    <display-name lang="tr">TELE 1</display-name>
+  </channel>
+  <channel id="tyt_turk">
+    <display-name lang="tr">TYT TÜRK</display-name>
+  </channel>
   <channel id="lalegul">
     <display-name lang="tr">LALEGÜL</display-name>
+  </channel>
+  <channel id="number1_turk">
+    <display-name lang="tr">NUMBER1 TÜRK</display-name>
   </channel>
   <channel id="dream_turk_tv">
     <display-name lang="tr">DREAM TÜRK TV</display-name>
@@ -342,80 +342,80 @@
   <channel id="power_tv">
     <display-name lang="tr">POWER TV</display-name>
   </channel>
-  <channel id="number1_turk">
-    <display-name lang="tr">NUMBER1 TÜRK</display-name>
+  <channel id="trt_muzik">
+    <display-name lang="tr">TRT MÜZİK</display-name>
   </channel>
   <channel id="power_turk">
     <display-name lang="tr">POWER TÜRK</display-name>
   </channel>
-  <channel id="cnn_international">
-    <display-name lang="tr">CNN INTERNATIONAL</display-name>
-  </channel>
   <channel id="al_jazeera_international">
     <display-name lang="tr">AL JAZEERA INTERNATIONAL</display-name>
   </channel>
-  <channel id="cnbc">
-    <display-name lang="tr">CNBC</display-name>
-  </channel>
-  <channel id="trt_world">
-    <display-name lang="tr">TRT WORLD</display-name>
+  <channel id="cnn_international">
+    <display-name lang="tr">CNN INTERNATIONAL</display-name>
   </channel>
   <channel id="bbc_news">
     <display-name lang="tr">BBC NEWS</display-name>
   </channel>
+  <channel id="cnbc">
+    <display-name lang="tr">CNBC</display-name>
+  </channel>
   <channel id="anews">
     <display-name lang="tr">ANEWS</display-name>
-  </channel>
-  <channel id="al_jazeera_arabic">
-    <display-name lang="tr">AL JAZEERA ARABIC</display-name>
-  </channel>
-  <channel id="trt_el_arabia">
-    <display-name lang="tr">TRT EL ARABIA</display-name>
-  </channel>
-  <channel id="tv5_monde">
-    <display-name lang="tr">TV5 MONDE</display-name>
   </channel>
   <channel id="nhk_world_japan">
     <display-name lang="tr">NHK WORLD-JAPAN</display-name>
   </channel>
+  <channel id="tv5_monde">
+    <display-name lang="tr">TV5 MONDE</display-name>
+  </channel>
+  <channel id="trt_world">
+    <display-name lang="tr">TRT WORLD</display-name>
+  </channel>
   <channel id="deutsche_welle">
     <display-name lang="tr">DEUTSCHE WELLE</display-name>
-  </channel>
-  <channel id="rt_arabic">
-    <display-name lang="tr">RT ARABIC</display-name>
-  </channel>
-  <channel id="france_24">
-    <display-name lang="tr">FRANCE 24</display-name>
   </channel>
   <channel id="saudi_quran">
     <display-name lang="tr">SAUDI QURAN</display-name>
   </channel>
-  <channel id="al_sunnah">
-    <display-name lang="tr">AL SUNNAH</display-name>
+  <channel id="trt_el_arabia">
+    <display-name lang="tr">TRT EL ARABIA</display-name>
   </channel>
   <channel id="turkce_pop">
     <display-name lang="tr">TÜRKÇE POP</display-name>
   </channel>
-  <channel id="turkce_slow">
-    <display-name lang="tr">TÜRKÇE SLOW</display-name>
-  </channel>
-  <channel id="turk_halk_muzigi">
-    <display-name lang="tr">TÜRK HALK MÜZİĞİ</display-name>
+  <channel id="al_jazeera_arabic">
+    <display-name lang="tr">AL JAZEERA ARABIC</display-name>
   </channel>
   <channel id="trt_eba">
     <display-name lang="tr">TRT EBA</display-name>
   </channel>
+  <channel id="rt_arabic">
+    <display-name lang="tr">RT ARABIC</display-name>
+  </channel>
+  <channel id="turkce_slow">
+    <display-name lang="tr">TÜRKÇE SLOW</display-name>
+  </channel>
+  <channel id="al_sunnah">
+    <display-name lang="tr">AL SUNNAH</display-name>
+  </channel>
+  <channel id="turk_halk_muzigi">
+    <display-name lang="tr">TÜRK HALK MÜZİĞİ</display-name>
+  </channel>
+  <channel id="france_24">
+    <display-name lang="tr">FRANCE 24</display-name>
+  </channel>
   <channel id="tas_plak">
     <display-name lang="tr">TAŞ PLAK</display-name>
-  </channel>
-  <channel id="turk_sanat_muzigi">
-    <display-name lang="tr">TÜRK SANAT MÜZİĞİ</display-name>
   </channel>
   <channel id="dini_musiki">
     <display-name lang="tr">DİNİ MUSİKİ</display-name>
   </channel>
-  <channel id="arabesk">
-    <display-name lang="tr">ARABESK</display-name>
+  <channel id="turk_sanat_muzigi">
+    <display-name lang="tr">TÜRK SANAT MÜZİĞİ</display-name>
+  </channel>
+  <channel id="yabanci_slow">
+    <display-name lang="tr">YABANCI SLOW</display-name>
   </channel>
   <channel id="90_lar">
     <display-name lang="tr">90’ LAR</display-name>
@@ -426,11 +426,14 @@
   <channel id="yabanci_rock">
     <display-name lang="tr">YABANCI ROCK</display-name>
   </channel>
-  <channel id="yabanci_slow">
-    <display-name lang="tr">YABANCI SLOW</display-name>
-  </channel>
   <channel id="film_muzikleri">
     <display-name lang="tr">FİLM MÜZİKLERİ</display-name>
+  </channel>
+  <channel id="arabesk">
+    <display-name lang="tr">ARABESK</display-name>
+  </channel>
+  <channel id="mutlu">
+    <display-name lang="tr">MUTLU</display-name>
   </channel>
   <channel id="blues">
     <display-name lang="tr">BLUES</display-name>
@@ -441,26 +444,23 @@
   <channel id="retro">
     <display-name lang="tr">RETRO</display-name>
   </channel>
-  <channel id="klasik_muzik">
-    <display-name lang="tr">KLASİK MÜZİK</display-name>
+  <channel id="lounge">
+    <display-name lang="tr">LOUNGE</display-name>
   </channel>
-  <channel id="jazz">
-    <display-name lang="tr">JAZZ</display-name>
+  <channel id="tivibu_cocuk">
+    <display-name lang="tr">TİVİBU ÇOCUK</display-name>
   </channel>
   <channel id="akustik">
     <display-name lang="tr">AKUSTİK</display-name>
   </channel>
-  <channel id="lounge">
-    <display-name lang="tr">LOUNGE</display-name>
-  </channel>
-  <channel id="mutlu">
-    <display-name lang="tr">MUTLU</display-name>
+  <channel id="jazz">
+    <display-name lang="tr">JAZZ</display-name>
   </channel>
   <channel id="calisirken">
     <display-name lang="tr">ÇALIŞIRKEN</display-name>
   </channel>
-  <channel id="tivibu_cocuk">
-    <display-name lang="tr">TİVİBU ÇOCUK</display-name>
+  <channel id="klasik_muzik">
+    <display-name lang="tr">KLASİK MÜZİK</display-name>
   </channel>
   <programme channel="90_lar" start="20260910000000 +0300" stop="20260910030000 +0300">
     <title lang="tr">Unutulmaz 90'lar</title>
@@ -738,9 +738,6 @@
   <programme channel="nick_jr" start="20260910000900 +0300" stop="20260910003200 +0300">
     <title lang="tr">BARBAPAPA Ailesi</title>
   </programme>
-  <programme channel="trt_1" start="20260910000900 +0300" stop="20260910030400 +0300">
-    <title lang="tr">Evlilik Güzeldir</title>
-  </programme>
   <programme channel="bbc_earth" start="20260910001000 +0300" stop="20260910012100 +0300">
     <title lang="tr">Sıfırın Altında Yaşam</title>
   </programme>
@@ -779,9 +776,6 @@
   </programme>
   <programme channel="trt_cocuk" start="20260910001500 +0300" stop="20260910003600 +0300">
     <title lang="tr">Maysa ve Bulut</title>
-  </programme>
-  <programme channel="tv_8_5" start="20260910001500 +0300" stop="20260910013200 +0300">
-    <title lang="tr">En İyi Nakavtlar</title>
   </programme>
   <programme channel="disney_junior" start="20260910001700 +0300" stop="20260910003700 +0300">
     <title lang="tr">Süper Kediler</title>
@@ -1412,9 +1406,6 @@
   </programme>
   <programme channel="rt_arabic" start="20260910013200 +0300" stop="20260910020000 +0300">
     <title lang="tr">Africa</title>
-  </programme>
-  <programme channel="tv_8_5" start="20260910013200 +0300" stop="20260910032100 +0300">
-    <title lang="tr">Çarkıfelek</title>
   </programme>
   <programme channel="atv" start="20260910013300 +0300" stop="20260910035700 +0300">
     <title lang="tr">Aşk ve Taht</title>
@@ -2268,9 +2259,6 @@
   <programme channel="babytv" start="20260910030400 +0300" stop="20260910030800 +0300">
     <title lang="tr">Gözlerini Kapat</title>
   </programme>
-  <programme channel="trt_1" start="20260910030400 +0300" stop="20260910052200 +0300">
-    <title lang="tr">Seksenler</title>
-  </programme>
   <programme channel="al_jazeera_arabic" start="20260910030500 +0300" stop="20260910040000 +0300">
     <title lang="tr">Scenarios</title>
   </programme>
@@ -2390,9 +2378,6 @@
   </programme>
   <programme channel="bbc_earth" start="20260910032100 +0300" stop="20260910042500 +0300">
     <title lang="tr">Anton ve Giovanni'nin İspanya Maceraları</title>
-  </programme>
-  <programme channel="tv_8_5" start="20260910032100 +0300" stop="20260910045300 +0300">
-    <title lang="tr">Canım Annem</title>
   </programme>
   <programme channel="babytv" start="20260910032200 +0300" stop="20260910032600 +0300">
     <title lang="tr">Gözlerini Kapat</title>
@@ -3141,9 +3126,6 @@
   <programme channel="fx" start="20260910045300 +0300" stop="20260910051800 +0300">
     <title lang="tr">How I Met Your Mother</title>
   </programme>
-  <programme channel="tv_8_5" start="20260910045300 +0300" stop="20260910053200 +0300">
-    <title lang="tr">Oynat Bakalım</title>
-  </programme>
   <programme channel="da_vinci" start="20260910045400 +0300" stop="20260910050000 +0300">
     <title lang="tr">Safe To Fly</title>
   </programme>
@@ -3468,9 +3450,6 @@
   <programme channel="da_vinci" start="20260910052200 +0300" stop="20260910054400 +0300">
     <title lang="tr">Gizemli Bir Ses</title>
   </programme>
-  <programme channel="trt_1" start="20260910052200 +0300" stop="20260910060900 +0300">
-    <title lang="tr">Hayallerinin Peşinde</title>
-  </programme>
   <programme channel="babytv" start="20260910052500 +0300" stop="20260910052900 +0300">
     <title lang="tr">Gözlerini Kapat</title>
   </programme>
@@ -3581,9 +3560,6 @@
   </programme>
   <programme channel="rt_arabic" start="20260910053200 +0300" stop="20260910060000 +0300">
     <title lang="tr">Documentary</title>
-  </programme>
-  <programme channel="tv_8_5" start="20260910053200 +0300" stop="20260910081400 +0300">
-    <title lang="tr">8x8</title>
   </programme>
   <programme channel="babytv" start="20260910053300 +0300" stop="20260910053600 +0300">
     <title lang="tr">Gözlerini Kapat</title>
@@ -4025,9 +4001,6 @@
   </programme>
   <programme channel="babytv" start="20260910060900 +0300" stop="20260910061400 +0300">
     <title lang="tr">Gözlerini Kapat</title>
-  </programme>
-  <programme channel="trt_1" start="20260910060900 +0300" stop="20260910070000 +0300">
-    <title lang="tr">Turgay Başyayla ile Lezzetli Tavsiye</title>
   </programme>
   <programme channel="cosmo_en" start="20260910061000 +0300" stop="20260910061500 +0300">
     <title lang="tr">Yakka Dee</title>
@@ -4655,9 +4628,6 @@
   </programme>
   <programme channel="tgrt_haber" start="20260910070000 +0300" stop="20260910075000 +0300">
     <title lang="tr">Günaydın Türkiye</title>
-  </programme>
-  <programme channel="trt_1" start="20260910070000 +0300" stop="20260910103000 +0300">
-    <title lang="tr">Evlilik Güzeldir</title>
   </programme>
   <programme channel="trt_2" start="20260910070000 +0300" stop="20260910073100 +0300">
     <title lang="tr">Misal</title>
@@ -5366,9 +5336,6 @@
   </programme>
   <programme channel="cartoon_network" start="20260910081400 +0300" stop="20260910082100 +0300">
     <title lang="tr">Grizzy ve Lemmingler</title>
-  </programme>
-  <programme channel="tv_8_5" start="20260910081400 +0300" stop="20260910100400 +0300">
-    <title lang="tr">Bizimkiler</title>
   </programme>
   <programme channel="bloomberg_ht" start="20260910081500 +0300" stop="20260910090000 +0300">
     <title lang="tr">Sabah Raporu</title>
@@ -6513,9 +6480,6 @@
   <programme channel="nick_jr" start="20260910100300 +0300" stop="20260910102500 +0300">
     <title lang="tr">Tim Rex Uzayda</title>
   </programme>
-  <programme channel="tv_8_5" start="20260910100400 +0300" stop="20260910114800 +0300">
-    <title lang="tr">Cevap Ver Türkiye</title>
-  </programme>
   <programme channel="babytv" start="20260910100500 +0300" stop="20260910101000 +0300">
     <title lang="tr">Adaya Hoş Geldin</title>
   </programme>
@@ -6716,9 +6680,6 @@
   </programme>
   <programme channel="sinema_2" start="20260910103000 +0300" stop="20260910124500 +0300">
     <title lang="tr">Kutup Yıldızı</title>
-  </programme>
-  <programme channel="trt_1" start="20260910103000 +0300" stop="20260910132300 +0300">
-    <title lang="tr">Alişan ile Hayata Gülümse</title>
   </programme>
   <programme channel="trt_2" start="20260910103000 +0300" stop="20260910105500 +0300">
     <title lang="tr">Müzikli Portreler</title>
@@ -7427,9 +7388,6 @@
   </programme>
   <programme channel="epic_drama" start="20260910114800 +0300" stop="20260910123700 +0300">
     <title lang="tr">Grantchester</title>
-  </programme>
-  <programme channel="tv_8_5" start="20260910114800 +0300" stop="20260910131500 +0300">
-    <title lang="tr">Oynat Bakalım</title>
   </programme>
   <programme channel="babytv" start="20260910114900 +0300" stop="20260910115600 +0300">
     <title lang="tr">Charlie - Sayılar</title>
@@ -8427,9 +8385,6 @@
   <programme channel="trt_spor_yildiz" start="20260910131500 +0300" stop="20260910133000 +0300">
     <title lang="tr">Sporla Değişen Hayatlar</title>
   </programme>
-  <programme channel="tv_8_5" start="20260910131500 +0300" stop="20260910152500 +0300">
-    <title lang="tr">Canım Annem</title>
-  </programme>
   <programme channel="tv5_monde" start="20260910131700 +0300" stop="20260910134500 +0300">
     <title lang="tr">Un Si Grand Soleil</title>
   </programme>
@@ -8450,9 +8405,6 @@
   </programme>
   <programme channel="nicktoons" start="20260910132100 +0300" stop="20260910134300 +0300">
     <title lang="tr">Wylde Pak</title>
-  </programme>
-  <programme channel="trt_1" start="20260910132300 +0300" stop="20260910150000 +0300">
-    <title lang="tr">Seksenler</title>
   </programme>
   <programme channel="cartoonito" start="20260910132400 +0300" stop="20260910133600 +0300">
     <title lang="tr">Mr. Bean</title>
@@ -9438,9 +9390,6 @@
   <programme channel="tgrt_haber" start="20260910150000 +0300" stop="20260910154500 +0300">
     <title lang="tr">Günün İçinden</title>
   </programme>
-  <programme channel="trt_1" start="20260910150000 +0300" stop="20260910185600 +0300">
-    <title lang="tr">Gönül Dağı</title>
-  </programme>
   <programme channel="trt_3_spor" start="20260910150000 +0300" stop="20260910170000 +0300">
     <title lang="tr">Spor Merkezi</title>
   </programme>
@@ -9644,9 +9593,6 @@
   </programme>
   <programme channel="trt_cocuk" start="20260910152500 +0300" stop="20260910154000 +0300">
     <title lang="tr">Pırıl</title>
-  </programme>
-  <programme channel="tv_8_5" start="20260910152500 +0300" stop="20260910162100 +0300">
-    <title lang="tr">Yazgı</title>
   </programme>
   <programme channel="360" start="20260910152600 +0300" stop="20260910170000 +0300">
     <title lang="tr">Battal Gazi Destanı</title>
@@ -10163,9 +10109,6 @@
   </programme>
   <programme channel="babytv" start="20260910162100 +0300" stop="20260910162600 +0300">
     <title lang="tr">Ressam Pierre</title>
-  </programme>
-  <programme channel="tv_8_5" start="20260910162100 +0300" stop="20260910180000 +0300">
-    <title lang="tr">Çarkıfelek</title>
   </programme>
   <programme channel="da_vinci" start="20260910162200 +0300" stop="20260910164500 +0300">
     <title lang="tr">Deniz Cini</title>
@@ -10764,7 +10707,7 @@
   <programme channel="ulke_tv" start="20260910171500 +0300" stop="20260910181500 +0300">
     <title lang="tr">Biral Şef ile Lezzet Kervanı</title>
   </programme>
-  <programme channel="epic_drama" start="20260910171600 +0300" stop="20260910184500 +0300">
+  <programme channel="epic_drama" start="20260910171600 +0300" stop="20260910184700 +0300">
     <title lang="tr">Dalgliesh</title>
   </programme>
   <programme channel="national_geographic_wild" start="20260910171600 +0300" stop="20260910180500 +0300">
@@ -10842,7 +10785,7 @@
   <programme channel="tlc" start="20260910172900 +0300" stop="20260910182400 +0300">
     <title lang="tr">Emlakçı Kardeşler: Yuvamız</title>
   </programme>
-  <programme channel="trt_spor" start="20260910172900 +0300" stop="20260910194500 +0300">
+  <programme channel="trt_spor" start="20260910172900 +0300" stop="20260910193200 +0300">
     <title lang="tr">Maç Özel</title>
   </programme>
   <programme channel="a2" start="20260910173000 +0300" stop="20260910200000 +0300">
@@ -10935,7 +10878,7 @@
   <programme channel="babytv" start="20260910173200 +0300" stop="20260910173800 +0300">
     <title lang="tr">Lale Ki Lolu</title>
   </programme>
-  <programme channel="bbc_earth" start="20260910173200 +0300" stop="20260910185000 +0300">
+  <programme channel="bbc_earth" start="20260910173200 +0300" stop="20260910184900 +0300">
     <title lang="tr">Dünyamız III</title>
   </programme>
   <programme channel="cartoon_network" start="20260910173200 +0300" stop="20260910175800 +0300">
@@ -11255,9 +11198,6 @@
   </programme>
   <programme channel="tv_5" start="20260910180000 +0300" stop="20260910200000 +0300">
     <title lang="tr">Ana Haber</title>
-  </programme>
-  <programme channel="tv_8_5" start="20260910180000 +0300" stop="20260910200000 +0300">
-    <title lang="tr">Bizimkiler</title>
   </programme>
   <programme channel="tv4" start="20260910180000 +0300" stop="20260910200000 +0300">
     <title lang="tr">Kara Murat Kara Şövalyeye Karşı</title>
@@ -11595,9 +11535,6 @@
   <programme channel="cnbc_e" start="20260910184500 +0300" stop="20260910191500 +0300">
     <title lang="tr">Sesli Ekonomi</title>
   </programme>
-  <programme channel="epic_drama" start="20260910184500 +0300" stop="20260910193500 +0300">
-    <title lang="tr">Grantchester</title>
-  </programme>
   <programme channel="fx" start="20260910184500 +0300" stop="20260910194000 +0300">
     <title lang="tr">Castle</title>
   </programme>
@@ -11637,14 +11574,17 @@
   <programme channel="atv" start="20260910184600 +0300" stop="20260910195900 +0300">
     <title lang="tr">ATV Ana Haber</title>
   </programme>
+  <programme channel="epic_drama" start="20260910184700 +0300" stop="20260910193400 +0300">
+    <title lang="tr">Grantchester</title>
+  </programme>
+  <programme channel="bbc_earth" start="20260910184900 +0300" stop="20260910200000 +0300">
+    <title lang="tr">Asya</title>
+  </programme>
   <programme channel="a_haber" start="20260910185000 +0300" stop="20260910200000 +0300">
     <title lang="tr">Akşam Ajansı</title>
   </programme>
   <programme channel="anews" start="20260910185000 +0300" stop="20260910185500 +0300">
     <title lang="tr">Sport</title>
-  </programme>
-  <programme channel="bbc_earth" start="20260910185000 +0300" stop="20260910200000 +0300">
-    <title lang="tr">Asya</title>
   </programme>
   <programme channel="da_vinci" start="20260910185000 +0300" stop="20260910185700 +0300">
     <title lang="tr">Bitz'in Plaj Partisi</title>
@@ -11690,9 +11630,6 @@
   </programme>
   <programme channel="moonbug" start="20260910185600 +0300" stop="20260910191500 +0300">
     <title lang="tr">Cody Time</title>
-  </programme>
-  <programme channel="trt_1" start="20260910185600 +0300" stop="20260910190000 +0300">
-    <title lang="tr">İddiaların Aksine</title>
   </programme>
   <programme channel="babytv" start="20260910185700 +0300" stop="20260910190100 +0300">
     <title lang="tr">Billy BamBam</title>
@@ -11819,9 +11756,6 @@
   </programme>
   <programme channel="sinema_1002" start="20260910190000 +0300" stop="20260910213000 +0300">
     <title lang="tr">Burning</title>
-  </programme>
-  <programme channel="trt_1" start="20260910190000 +0300" stop="20260910193600 +0300">
-    <title lang="tr">Ana Haber</title>
   </programme>
   <programme channel="trt_2" start="20260910190000 +0300" stop="20260910193000 +0300">
     <title lang="tr">Edebi Sofralar</title>
@@ -12036,7 +11970,7 @@
   <programme channel="deutsche_welle" start="20260910193000 +0300" stop="20260910200000 +0300">
     <title lang="tr">Focus on Europe</title>
   </programme>
-  <programme channel="dmax" start="20260910193000 +0300" stop="20260910203000 +0300">
+  <programme channel="dmax" start="20260910193000 +0300" stop="20260910202800 +0300">
     <title lang="tr">Çeliğin Ustaları</title>
   </programme>
   <programme channel="diyanet_tv" start="20260910193000 +0300" stop="20260910200000 +0300">
@@ -12069,7 +12003,7 @@
   <programme channel="tlc" start="20260910193000 +0300" stop="20260910213000 +0300">
     <title lang="tr">Antropoid</title>
   </programme>
-  <programme channel="trt_2" start="20260910193000 +0300" stop="20260910201500 +0300">
+  <programme channel="trt_2" start="20260910193000 +0300" stop="20260910194800 +0300">
     <title lang="tr">Sinema +</title>
   </programme>
   <programme channel="trt_eba" start="20260910193000 +0300" stop="20260910200000 +0300">
@@ -12102,13 +12036,16 @@
   <programme channel="rt_arabic" start="20260910193200 +0300" stop="20260910200000 +0300">
     <title lang="tr">Journey through Memory</title>
   </programme>
+  <programme channel="trt_spor" start="20260910193200 +0300" stop="20260910195400 +0300">
+    <title lang="tr">UEFA Şampiyonlar Ligi Özetler</title>
+  </programme>
   <programme channel="babytv" start="20260910193400 +0300" stop="20260910193600 +0300">
     <title lang="tr">Giggle Wiggle</title>
   </programme>
   <programme channel="da_vinci" start="20260910193400 +0300" stop="20260910195800 +0300">
     <title lang="tr">İlginç Sistem</title>
   </programme>
-  <programme channel="epic_drama" start="20260910193500 +0300" stop="20260910202000 +0300">
+  <programme channel="epic_drama" start="20260910193400 +0300" stop="20260910201700 +0300">
     <title lang="tr">Murdoch Gizemleri</title>
   </programme>
   <programme channel="babytv" start="20260910193600 +0300" stop="20260910193800 +0300">
@@ -12116,9 +12053,6 @@
   </programme>
   <programme channel="disney_junior" start="20260910193600 +0300" stop="20260910194300 +0300">
     <title lang="tr">Bluey</title>
-  </programme>
-  <programme channel="trt_1" start="20260910193600 +0300" stop="20260910220000 +0300">
-    <title lang="tr">Fenerbahçe - Roma</title>
   </programme>
   <programme channel="babytv" start="20260910193800 +0300" stop="20260910194000 +0300">
     <title lang="tr">Şarkılar - Kafiyeler</title>
@@ -12198,9 +12132,6 @@
   <programme channel="trt_genc" start="20260910194500 +0300" stop="20260910202000 +0300">
     <title lang="tr">Kafanı Takma</title>
   </programme>
-  <programme channel="trt_spor" start="20260910194500 +0300" stop="20260910200000 +0300">
-    <title lang="tr">UEFA Şampiyonlar Ligi Özetler</title>
-  </programme>
   <programme channel="trt_turk" start="20260910194500 +0300" stop="20260910200000 +0300">
     <title lang="tr">Zuhurat</title>
   </programme>
@@ -12209,6 +12140,9 @@
   </programme>
   <programme channel="babytv" start="20260910194800 +0300" stop="20260910195500 +0300">
     <title lang="tr">Charlie - Sayılar</title>
+  </programme>
+  <programme channel="trt_2" start="20260910194800 +0300" stop="20260910203000 +0300">
+    <title lang="tr">Hüner</title>
   </programme>
   <programme channel="anews" start="20260910195000 +0300" stop="20260910195500 +0300">
     <title lang="tr">Sport</title>
@@ -12239,6 +12173,9 @@
   </programme>
   <programme channel="nick_jr" start="20260910195300 +0300" stop="20260910200500 +0300">
     <title lang="tr">Paw Patrol</title>
+  </programme>
+  <programme channel="trt_spor" start="20260910195400 +0300" stop="20260910213000 +0300">
+    <title lang="tr">Türkiye - Almanya</title>
   </programme>
   <programme channel="a_para" start="20260910195500 +0300" stop="20260910200000 +0300">
     <title lang="tr">Hava Durumu</title>
@@ -12294,7 +12231,7 @@
   <programme channel="anews" start="20260910200000 +0300" stop="20260910202500 +0300">
     <title lang="tr">Newshour</title>
   </programme>
-  <programme channel="bbc_earth" start="20260910200000 +0300" stop="20260910210000 +0300">
+  <programme channel="bbc_earth" start="20260910200000 +0300" stop="20260910205900 +0300">
     <title lang="tr">Sıfırın Altında Yaşam</title>
   </programme>
   <programme channel="bbc_news" start="20260910200000 +0300" stop="20260910203000 +0300">
@@ -12432,9 +12369,6 @@
   <programme channel="trt_muzik" start="20260910200000 +0300" stop="20260910210000 +0300">
     <title lang="tr">Zamane</title>
   </programme>
-  <programme channel="trt_spor" start="20260910200000 +0300" stop="20260910213000 +0300">
-    <title lang="tr">Türkiye - Almanya</title>
-  </programme>
   <programme channel="trt_turk" start="20260910200000 +0300" stop="20260910210000 +0300">
     <title lang="tr">Gönlümdeki Köln</title>
   </programme>
@@ -12446,9 +12380,6 @@
   </programme>
   <programme channel="tv_5" start="20260910200000 +0300" stop="20260911000000 +0300">
     <title lang="tr">Düşünme Vakti</title>
-  </programme>
-  <programme channel="tv_8_5" start="20260910200000 +0300" stop="20260911001500 +0300">
-    <title lang="tr">Jet Sosyete</title>
   </programme>
   <programme channel="tv4" start="20260910200000 +0300" stop="20260910220000 +0300">
     <title lang="tr">Kızım Ayşe</title>
@@ -12561,11 +12492,11 @@
   <programme channel="tarih_tv" start="20260910201500 +0300" stop="20260910205000 +0300">
     <title lang="tr">Kuzey Yıldızı İbn Fadlan Ve İdil Bulgarları</title>
   </programme>
-  <programme channel="trt_2" start="20260910201500 +0300" stop="20260910203000 +0300">
-    <title lang="tr">Hüner</title>
-  </programme>
   <programme channel="minika_go" start="20260910201600 +0300" stop="20260910202400 +0300">
     <title lang="tr">Weasy Ailesi</title>
+  </programme>
+  <programme channel="epic_drama" start="20260910201700 +0300" stop="20260910210000 +0300">
+    <title lang="tr">Murdoch Gizemleri</title>
   </programme>
   <programme channel="babytv" start="20260910201900 +0300" stop="20260910202400 +0300">
     <title lang="tr">Teeny - Tiny'nin Sınıfı</title>
@@ -12578,9 +12509,6 @@
   </programme>
   <programme channel="cosmo_sports" start="20260910202000 +0300" stop="20260910223000 +0300">
     <title lang="tr">Kralların Kralı Kahramanlar Serisi, Vol.36 Kişinev 24.03.2018 - Bölüm 42</title>
-  </programme>
-  <programme channel="epic_drama" start="20260910202000 +0300" stop="20260910210000 +0300">
-    <title lang="tr">Murdoch Gizemleri</title>
   </programme>
   <programme channel="trt_genc" start="20260910202000 +0300" stop="20260910203000 +0300">
     <title lang="tr">Peki Ne İşe Yarar?</title>
@@ -12617,6 +12545,9 @@
   </programme>
   <programme channel="babytv" start="20260910202800 +0300" stop="20260910203100 +0300">
     <title lang="tr">Teeny - Tiny'nin Sınıfı</title>
+  </programme>
+  <programme channel="dmax" start="20260910202800 +0300" stop="20260910213000 +0300">
+    <title lang="tr">Çeliğin Ustaları</title>
   </programme>
   <programme channel="da_vinci" start="20260910202900 +0300" stop="20260910204400 +0300">
     <title lang="tr">Şifreleme tarihi</title>
@@ -12659,9 +12590,6 @@
   </programme>
   <programme channel="deutsche_welle" start="20260910203000 +0300" stop="20260910210000 +0300">
     <title lang="tr">DW News</title>
-  </programme>
-  <programme channel="dmax" start="20260910203000 +0300" stop="20260910213000 +0300">
-    <title lang="tr">Çeliğin Ustaları</title>
   </programme>
   <programme channel="ekoturk" start="20260910203000 +0300" stop="20260910210000 +0300">
     <title lang="tr">Alpha Masası</title>
@@ -12843,6 +12771,9 @@
   <programme channel="babytv" start="20260910205800 +0300" stop="20260910210400 +0300">
     <title lang="tr">Choopies</title>
   </programme>
+  <programme channel="bbc_earth" start="20260910205900 +0300" stop="20260910220000 +0300">
+    <title lang="tr">Ben Fogle: Vahşi Yaşama Dönüş</title>
+  </programme>
   <programme channel="da_vinci" start="20260910205900 +0300" stop="20260910213200 +0300">
     <title lang="tr">İtfaiyeci (Sabrina Cohen-Hatton) ve Biyonik Adam (Mark Ormrod)</title>
   </programme>
@@ -12872,9 +12803,6 @@
   </programme>
   <programme channel="arabesk" start="20260910210000 +0300" stop="20260911000000 +0300">
     <title lang="tr">Arabesk Akşamlar</title>
-  </programme>
-  <programme channel="bbc_earth" start="20260910210000 +0300" stop="20260910220000 +0300">
-    <title lang="tr">Ben Fogle: Vahşi Yaşama Dönüş</title>
   </programme>
   <programme channel="bbc_first" start="20260910210000 +0300" stop="20260910214500 +0300">
     <title lang="tr">Scott ve Bailey</title>
@@ -13407,11 +13335,17 @@
   <programme channel="moonbug" start="20260910214900 +0300" stop="20260910222500 +0300">
     <title lang="tr">ARPO</title>
   </programme>
+  <programme channel="trt_1" start="20260910214900 +0300" stop="20260911000900 +0300">
+    <title lang="tr">Sporting CP - Galatasaray</title>
+  </programme>
   <programme channel="anews" start="20260910215000 +0300" stop="20260910215500 +0300">
     <title lang="tr">Sport</title>
   </programme>
   <programme channel="babytv" start="20260910215100 +0300" stop="20260910215700 +0300">
     <title lang="tr">Lale Ki Lolu</title>
+  </programme>
+  <programme channel="tv_8_5" start="20260910215300 +0300" stop="20260911001500 +0300">
+    <title lang="tr">Jet Sosyete</title>
   </programme>
   <programme channel="minika_cocuk" start="20260910215400 +0300" stop="20260910220000 +0300">
     <title lang="tr">Weasy Ailesi</title>
@@ -13526,9 +13460,6 @@
   </programme>
   <programme channel="sinema_aksiyon" start="20260910220000 +0300" stop="20260910234500 +0300">
     <title lang="tr">Venom: Zehirli Öfke 2</title>
-  </programme>
-  <programme channel="trt_1" start="20260910220000 +0300" stop="20260910223000 +0300">
-    <title lang="tr">Maç Sonu</title>
   </programme>
   <programme channel="trt_belgesel" start="20260910220000 +0300" stop="20260910225500 +0300">
     <title lang="tr">Hayvanların Silahlanma Yarışı</title>
@@ -13724,9 +13655,6 @@
   </programme>
   <programme channel="tarih_tv" start="20260910223000 +0300" stop="20260910232000 +0300">
     <title lang="tr">Altın: Açgözlülüğün Para Birimi</title>
-  </programme>
-  <programme channel="trt_1" start="20260910223000 +0300" stop="20260911020500 +0300">
-    <title lang="tr">Evlilik Güzeldir</title>
   </programme>
   <programme channel="trt_el_arabia" start="20260910223000 +0300" stop="20260910230000 +0300">
     <title lang="tr">Fil Iqtisad</title>
