@@ -1,3 +1,4 @@
+
 name: Tivibu EPG Güncelle
 
 on:
@@ -5,14 +6,19 @@ on:
 
   schedule:
     # Her 30 dakikada bir çalışır
-    - cron: "*/30 * * * *"
+    - cron: "17,47 * * * *"
 
 permissions:
   contents: write
 
+concurrency:
+  group: tivibu-epg-update
+  cancel-in-progress: true
+
 jobs:
   update-epg:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: Repository indir
@@ -22,6 +28,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+
+      - name: Playwright tarayıcı önbelleği
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-v1
 
       - name: Playwright kurulumu
         run: |
@@ -33,16 +46,31 @@ jobs:
         run: |
           python tivibu_epg.py
 
-      - name: EPG dosyasını kontrol et
+      - name: EPG dosyasını doğrula
         run: |
-          echo "EPG dosya bilgisi:"
-          ls -lh epg.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          import os
 
-          echo "Program sayısı:"
-          grep -c "<programme " epg.xml || true
+          if not os.path.isfile("epg.xml"):
+              raise SystemExit("HATA: epg.xml bulunamadı!")
 
-          echo "Kanal sayısı:"
-          grep -c "<channel " epg.xml || true
+          if os.path.getsize("epg.xml") == 0:
+              raise SystemExit("HATA: EPG dosyası boş!")
+
+          root = ET.parse("epg.xml").getroot()
+
+          channels = len(root.findall("channel"))
+          programs = len(root.findall("programme"))
+
+          print(f"Kanal sayısı: {channels}")
+          print(f"Program sayısı: {programs}")
+
+          if channels == 0 or programs == 0:
+              raise SystemExit("HATA: EPG verisi eksik!")
+
+          print("EPG doğrulaması başarılı.")
+          PY
 
       - name: Değişiklikleri kaydet
         run: |
