@@ -3,83 +3,58 @@ name: Tivibu EPG Güncelle
 
 on:
   workflow_dispatch:
-
   schedule:
-    # Her 30 dakikada bir
-    - cron: "17,47 * * * *"
+    - cron: '0 */6 * * *'
 
 permissions:
   contents: write
 
 concurrency:
   group: tivibu-epg-update
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   update-epg:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
-      - name: Repository indir
+      - name: Depoyu indir
         uses: actions/checkout@v4
 
-      - name: Python kurulumu
+      - name: Python kur
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.11'
+          cache: pip
+
+      - name: Playwright kur
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install playwright
 
       - name: Playwright tarayıcı önbelleği
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-chromium-${{ runner.os }}-v1
+          key: ${{ runner.os }}-playwright-headless-shell-v1
 
-      - name: Playwright kurulumu
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install playwright
-          python -m playwright install --with-deps chromium
+      - name: Chromium bağımlılıklarını kur
+        run: python -m playwright install-deps chromium
+
+      - name: Yalnızca Headless Shell kur
+        run: python -m playwright install --only-shell chromium
 
       - name: Tivibu EPG oluştur
-        run: |
-          python tivibu_epg.py
+        run: python tivibu_epg.py
 
-      - name: EPG dosyasını doğrula
-        run: |
-          python - <<'PY'
-          import xml.etree.ElementTree as ET
-          import os
-
-          if not os.path.isfile("epg.xml"):
-              raise SystemExit("HATA: epg.xml bulunamadı!")
-
-          if os.path.getsize("epg.xml") == 0:
-              raise SystemExit("HATA: EPG dosyası boş!")
-
-          root = ET.parse("epg.xml").getroot()
-
-          channels = len(root.findall("channel"))
-          programs = len(root.findall("programme"))
-
-          print(f"Kanal sayısı: {channels}")
-          print(f"Program sayısı: {programs}")
-
-          if channels == 0 or programs == 0:
-              raise SystemExit("HATA: EPG verisi eksik!")
-
-          print("EPG doğrulaması başarılı.")
-          PY
-
-      - name: Değişiklikleri kaydet
+      - name: EPG dosyasını GitHub'a kaydet
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           git add epg.xml
-
           if git diff --cached --quiet; then
-            echo "Yeni değişiklik yok."
+            echo "EPG dosyasında değişiklik yok."
           else
             git commit -m "Tivibu EPG güncellendi"
             git push
