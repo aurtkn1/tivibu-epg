@@ -2,10 +2,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Tivibu 7 günlük EPG oluşturucu.
+"""
+Tivibu 7 günlük EPG oluşturucu.
 
 Programlar Tivibu'nun MultiPrevue servisi üzerinden alınır.
 Programlar channelCode alanıyla doğrudan kanala bağlanır.
+
+Bu sürümde servis yanıtı ayrıntılı olarak incelenir.
 Bütün kontroller geçmeden mevcut epg.xml değiştirilmez.
 """
 
@@ -648,7 +651,7 @@ def get_list(data, keys):
 
 
 # ============================================================
-# SERVİS YANITINI İNCELEME
+# SERVİS YANITINI AYRINTILI İNCELEME
 # ============================================================
 
 def describe_service_fields(data):
@@ -661,52 +664,135 @@ def describe_service_fields(data):
         "prevueListViewModel",
         "firtPrevueViewModel",
         "mobilPrevueViewModel",
+        "dateListViewModel",
+        "generalPlayLink",
     )
+
+    sensitive_words = (
+
+        "token",
+        "csrf",
+        "cookie",
+        "password",
+        "authorization",
+        "secret",
+    )
+
+    def safe_value(value, depth=0):
+
+        if depth > 5:
+            return "<iç içe veri sınırı>"
+
+        if isinstance(value, dict):
+
+            result = {}
+
+            for key, nested in value.items():
+
+                key_text = str(key)
+
+                if any(
+                    word in key_text.lower()
+                    for word in sensitive_words
+                ):
+
+                    result[key_text] = "<GİZLENDİ>"
+
+                else:
+
+                    result[key_text] = safe_value(
+                        nested,
+                        depth + 1
+                    )
+
+            return result
+
+        if isinstance(value, list):
+
+            return [
+                safe_value(item, depth + 1)
+                for item in value[:3]
+            ]
+
+        if isinstance(value, str):
+
+            text = value
+
+            if len(text) > 3000:
+                text = text[:3000] + "... <kesildi>"
+
+            return text
+
+        return value
 
     details = []
 
+    details.append("SERVİSİN TÜM ANAHTARLARI:")
+
+    for key, value in data.items():
+
+        details.append(
+            f"- {key}: tür={type(value).__name__}"
+        )
+
+    details.append("")
+    details.append("SERVİS ALANLARININ AYRINTILI İÇERİĞİ:")
+
     for name in names:
 
-        value = data.get(name)
+        value = next(
+            (
+                v
+                for k, v in data.items()
+                if str(k).lower() == name.lower()
+            ),
+            None
+        )
 
         if value is None:
 
-            value = next(
-                (
-                    v
-                    for k, v in data.items()
-                    if str(k).lower() == name.lower()
-                ),
-                None
+            details.append(
+                f"\n{name}: BULUNAMADI"
             )
+
+            continue
+
+        details.append(
+            f"\n{name}:"
+        )
+
+        details.append(
+            f"Tür: {type(value).__name__}"
+        )
 
         if isinstance(value, (list, dict)):
 
-            preview = json.dumps(
-                value[:1] if isinstance(value, list) else value,
-                ensure_ascii=False
-            )
-
             details.append(
-                f"{name}: tür={type(value).__name__}, "
-                f"adet={len(value)}, "
-                f"örnek={preview[:900]}"
+                f"Adet: {len(value)}"
             )
 
         elif isinstance(value, str):
 
             details.append(
-                f"{name}: tür=str, "
-                f"uzunluk={len(value)}, "
-                f"örnek={value[:500]}"
+                f"Uzunluk: {len(value)}"
             )
 
-        else:
+        try:
 
-            details.append(
-                f"{name}: tür={type(value).__name__}, "
-                f"değer={value!r}"
+            preview = json.dumps(
+                safe_value(value),
+                ensure_ascii=False,
+                indent=2,
+                default=str
             )
+
+        except Exception as exc:
+
+            preview = f"İçerik yazdırılamadı: {exc}"
+
+        details.append(
+            "İçerik:\n" + preview[:12000]
+        )
 
     return "\n".join(details)
 
@@ -1027,6 +1113,7 @@ def main():
     print("=" * 68)
     print("TIVIBU 7 GÜNLÜK EPG")
     print("Kanal koduyla doğrudan eşleştirme")
+    print("Ayrıntılı servis yanıtı inceleme sürümü")
     print("=" * 68)
 
     # --------------------------------------------------------
