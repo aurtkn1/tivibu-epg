@@ -19,20 +19,9 @@ PAGE_TIMEOUT = 60000
 DATE_WAIT_MS = 1100
 MIN_CHANNELS = 30
 
-# Tivibu'nun bütün kategori sayfaları
+# Yalnızca Tüm Kanallar
 CATEGORY_PAGES = [
     ("Tüm Kanallar", "/canli-tv"),
-    ("Diğer", "/canli-tv/diger"),
-    ("Global", "/canli-tv/global"),
-    ("Ulusal", "/canli-tv/ulusal"),
-    ("Müzik", "/canli-tv/muzik"),
-    ("Yaşam-Stil", "/canli-tv/yasam-stil"),
-    ("Dizi", "/canli-tv/dizi"),
-    ("Spor", "/canli-tv/spor"),
-    ("Haber", "/canli-tv/haber"),
-    ("Belgesel", "/canli-tv/belgesel"),
-    ("Çocuk", "/canli-tv/cocuk"),
-    ("Sinema", "/canli-tv/sinema"),
 ]
 
 BAD_CHANNELS = {
@@ -604,7 +593,7 @@ def main():
     today = datetime.now(ISTANBUL).date()
 
     print("=" * 68)
-    print("TIVIBU 7 GÜNLÜK EPG - TÜM KATEGORİLER")
+    print("TIVIBU 7 GÜNLÜK EPG - TÜM KANALLAR")
     print(f"Kaynak: {LIVE_TV_URL}")
     print(f"Başlangıç: {today.strftime('%d.%m.%Y')}")
     print(f"Kategori sayısı: {len(CATEGORY_PAGES)}")
