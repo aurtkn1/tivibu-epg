@@ -1,4 +1,4 @@
-
+# tivibu_epg.py
 import re
 import html
 import time
@@ -16,11 +16,10 @@ BASE_URL = "https://www.tivibu.com.tr"
 LIVE_TV_URL = f"{BASE_URL}/canli-tv"
 OUTPUT_FILE = "epg.xml"
 ISTANBUL = ZoneInfo("Europe/Istanbul")
-
 DAYS = 7
 PAGE_TIMEOUT = 60000
-DATE_WAIT_MS = 1300
-MIN_CHANNELS = 30
+DATE_WAIT_MS = 1100
+MIN_CHANNELS = 10
 MIN_PROGRAMS = 100
 
 CATEGORY_PAGES = [
@@ -42,8 +41,6 @@ BAD_CHANNELS = {
     "BENİM KANALIM",
     "FAVORİ KANALLARIM",
     "TİVİBU TANITIM SAYFASI",
-    "TİVİBU CANLI TV, KANAL VE PROGRAMLAR",
-    "TİVİBU NEDİR?",
 }
 
 TIME_RE = re.compile(
@@ -52,273 +49,105 @@ TIME_RE = re.compile(
 )
 
 CATEGORY_RE = re.compile(
-    r"\s+(?:Yaşam|Film|Dizi|Spor|Haber|Çocuk|Müzik|Belgesel|Sinema|"
-    r"Ulusal|Global|Diğer|Aktüalite|Spor Programı)\s*[-–]?\s*$",
+    r"\s+(?:Yaşam|Film|Dizi|Spor|Haber|Çocuk|Müzik|Belgesel|Sinema|Ulusal|Global|Diğer|Aktüalite|Spor Programı)\s*[-–]?\s*$",
     re.IGNORECASE,
 )
 
 
-# Program bağlantısından başlayarak DOM'daki en yakın kanal bağlantısını
-# arar. Önceki sürümlerdeki hatalı "tek kanal içeren üst kapsayıcı"
-# ve "global en yakın bağlantı" yöntemleri kullanılmaz.
+# ÖNEMLİ: Program bağlantısından yukarı doğru arama yapar.
+# Program bağlantısını global DOM yakınlığıyla başka kanala bağlamaz.
 EXTRACT_JS = r"""() => {
-    const timeRe = /\d{1,2}:\d{2}\s*(?:→|➜|[-–])\s*\d{1,2}:\d{2}/;
-    const norm = s => (s || "").replace(/\s+/g, " ").trim();
+  const timeRe = /\d{1,2}:\d{2}\s*(?:→|➜|[-–])\s*\d{1,2}:\d{2}/;
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+  const anchors = [...document.querySelectorAll('a')];
+  const groups = new Map();
+  const unmapped = [];
 
-    const allAnchors = [...document.querySelectorAll("a[href]")];
+  for (const programAnchor of anchors) {
+    const programText = norm(programAnchor.innerText || programAnchor.textContent);
+    if (!programAnchor.href || !timeRe.test(programText)) continue;
 
-    const channels = [];
-    const programs = [];
+    let node = programAnchor;
+    let channelHref = '';
+    let channelName = '';
 
-    for (const a of allAnchors) {
-        let url;
+    for (let depth = 0; depth < 35 && node; depth++, node = node.parentElement) {
+      const channelLinks = [...node.querySelectorAll('a[href]')]
+        .filter(a => {
+          try {
+            const u = new URL(a.href, location.href);
+            return u.pathname.toLowerCase().includes('/kanallar/');
+          } catch (_) {
+            return false;
+          }
+        });
 
-        try {
-            url = new URL(a.href, location.href);
-        } catch (_) {
-            continue;
-        }
+      const unique = new Map();
 
-        const path = url.pathname.toLowerCase();
+      for (const link of channelLinks) {
+        const href = link.href.split('#')[0];
+        const name = norm(link.innerText || link.textContent) ||
+          norm(link.querySelector('img[alt]')?.getAttribute('alt'))
+            .replace(/^Kanal\s*:\s*/i, '');
 
-        if (path.includes("/kanallar/")) {
-            let name = norm(a.innerText || a.textContent);
+        if (href && name) unique.set(href, { href, name });
+      }
 
-            if (!name) {
-                const img = a.querySelector("img[alt]");
-                if (img) name = norm(img.getAttribute("alt"));
-            }
-
-            name = name.replace(/^Kanal\s*:\s*/i, "").trim();
-
-            if (name) {
-                channels.push({
-                    element: a,
-                    href: url.origin + url.pathname,
-                    name
-                });
-            }
-        }
-
-        const text = norm(a.innerText || a.textContent);
-
-        if (timeRe.test(text)) {
-            programs.push({
-                element: a,
-                text
-            });
-        }
+      if (unique.size === 1) {
+        const match = [...unique.values()][0];
+        channelHref = match.href;
+        channelName = match.name;
+        break;
+      }
     }
 
-    const rows = new Map();
-    const assignedPrograms = new Set();
-    const assignedChannels = new Set();
-
-    const ancestors = element => {
-        const result = [];
-        let node = element;
-
-        for (let depth = 0; depth < 30 && node; depth++) {
-            result.push(node);
-            node = node.parentElement;
-        }
-
-        return result;
-    };
-
-    const channelAncestorCache = new Map();
-
-    function getChannelLinks(node) {
-        if (channelAncestorCache.has(node)) {
-            return channelAncestorCache.get(node);
-        }
-
-        const result = [];
-
-        for (const a of node.querySelectorAll('a[href*="/kanallar/"]')) {
-            try {
-                const u = new URL(a.href, location.href);
-
-                if (u.pathname.toLowerCase().includes("/kanallar/")) {
-                    let name = norm(a.innerText || a.textContent);
-
-                    if (!name) {
-                        const img = a.querySelector("img[alt]");
-                        if (img) name = norm(img.getAttribute("alt"));
-                    }
-
-                    name = name.replace(/^Kanal\s*:\s*/i, "").trim();
-
-                    if (name) {
-                        result.push({
-                            href: u.origin + u.pathname,
-                            name,
-                            element: a
-                        });
-                    }
-                }
-            } catch (_) {}
-        }
-
-        channelAncestorCache.set(node, result);
-        return result;
+    if (!channelHref || !channelName) {
+      unmapped.push({
+        href: programAnchor.href,
+        firstProgram: programText,
+        reason: 'Üst kartta tek bir /kanallar/ bağlantısı bulunamadı'
+      });
+      continue;
     }
 
-    // Önce programın kendi üst elemanlarında kanal bağlantısı ara.
-    // Program ve kanal farklı kardeş elemanlardaysa ortak kart kapsayıcısı
-    // bulunur. Bir kapsayıcıda birden çok kanal varsa bir alt seviyeye
-    // inilerek programın ait olduğu kanal belirlenir.
-    for (const program of programs) {
-        const chain = ancestors(program.element);
-        let best = null;
-
-        for (let depth = 0; depth < chain.length; depth++) {
-            const node = chain[depth];
-            const links = getChannelLinks(node);
-
-            if (!links.length) continue;
-
-            const unique = new Map();
-
-            for (const item of links) {
-                if (!unique.has(item.href)) {
-                    unique.set(item.href, item);
-                }
-            }
-
-            // Tek kanal bağlantısı olan ilk ortak kapsayıcı kesin eşleşme.
-            if (unique.size === 1) {
-                best = [...unique.values()][0];
-                break;
-            }
-
-            // Birden fazla kanal varsa bu kapsayıcı henüz kart değildir.
-            // Üst kapsayıcıya çıkmaya devam etme; yanlış eşleşme yaratır.
-        }
-
-        if (!best) continue;
-
-        if (!rows.has(best.href)) {
-            rows.set(best.href, {
-                name: best.name,
-                href: best.href,
-                items: [],
-                seen: new Set()
-            });
-        }
-
-        const row = rows.get(best.href);
-
-        if (!row.seen.has(program.text)) {
-            row.seen.add(program.text);
-            row.items.push(program.text);
-        }
-
-        assignedPrograms.add(program.element);
-        assignedChannels.add(best.href);
+    if (!groups.has(channelHref)) {
+      groups.set(channelHref, {
+        name: channelName,
+        items: [],
+        seen: new Set()
+      });
     }
 
-    // İkinci geçiş: Kanal kartlarının DOM sırasına göre programları
-    // bölümlere ayır. Kanal bağlantısı programın üstünde değil, kartın
-    // yanında bulunan Tivibu sayfa düzenleri için kullanılır.
-    //
-    // Program grupları arasındaki kanal bağlantısı sınırları esas alınır.
-    if (rows.size < 10 && channels.length > 0 && programs.length > 0) {
-        const channelPositions = channels.map(c => ({
-            ...c,
-            index: allAnchors.indexOf(c.element)
-        }));
+    const group = groups.get(channelHref);
 
-        const programPositions = programs.map(p => ({
-            ...p,
-            index: allAnchors.indexOf(p.element)
-        }));
-
-        const ordered = [
-            ...channelPositions.map(c => ({
-                type: "channel",
-                index: c.index,
-                data: c
-            })),
-            ...programPositions.map(p => ({
-                type: "program",
-                index: p.index,
-                data: p
-            }))
-        ].sort((a, b) => a.index - b.index);
-
-        let currentChannel = null;
-        let currentPrograms = [];
-
-        function flushGroup() {
-            if (!currentChannel || !currentPrograms.length) return;
-
-            const key = currentChannel.href;
-
-            if (!rows.has(key)) {
-                rows.set(key, {
-                    name: currentChannel.name,
-                    href: key,
-                    items: [],
-                    seen: new Set()
-                });
-            }
-
-            const row = rows.get(key);
-
-            for (const item of currentPrograms) {
-                if (!row.seen.has(item.text)) {
-                    row.seen.add(item.text);
-                    row.items.push(item.text);
-                }
-            }
-
-            currentPrograms = [];
-        }
-
-        for (const item of ordered) {
-            if (item.type === "channel") {
-                flushGroup();
-                currentChannel = item.data;
-            } else if (currentChannel) {
-                currentPrograms.push(item.data);
-            }
-        }
-
-        flushGroup();
+    if (!group.seen.has(programText)) {
+      group.seen.add(programText);
+      group.items.push(programText);
     }
+  }
 
-    const output = [];
+  const rows = [];
 
-    for (const row of rows.values()) {
-        if (row.items.length) {
-            output.push({
-                name: row.name,
-                href: row.href,
-                items: row.items
-            });
-        }
+  for (const [href, group] of groups.entries()) {
+    if (group.items.length) {
+      rows.push({
+        name: group.name,
+        href,
+        items: group.items
+      });
     }
+  }
 
-    const totalMapped = output.reduce(
-        (sum, row) => sum + row.items.length,
-        0
-    );
-
-    return {
-        rows: output,
-        diagnostics: {
-            channelAnchors: channels.length,
-            programAnchors: programs.length,
-            mappedChannels: output.length,
-            mappedPrograms: totalMapped,
-            unmappedPrograms: Math.max(0, programs.length - totalMapped),
-            samples: programs
-                .filter(p => !assignedPrograms.has(p.element))
-                .slice(0, 5)
-                .map(p => p.text)
-        }
-    };
+  return {
+    rows,
+    groupCount: groups.size + unmapped.length,
+    diagnostics: {
+      programGroupCount: groups.size + unmapped.length,
+      mappedGroupCount: rows.length,
+      unmappedGroupCount: unmapped.length,
+      unmappedSamples: unmapped.slice(0, 10)
+    }
+  };
 }"""
 
 
@@ -329,7 +158,6 @@ def clean_text(value):
 
 def slugify(value):
     value = clean_text(value)
-
     replacements = {
         "ç": "c", "ğ": "g", "ı": "i", "ö": "o",
         "ş": "s", "ü": "u", "â": "a", "î": "i", "û": "u",
@@ -403,7 +231,7 @@ def open_category(page, category_name, path):
     except PlaywrightTimeoutError:
         pass
 
-    page.wait_for_timeout(1200)
+    page.wait_for_timeout(1000)
 
 
 def select_date(page, label):
@@ -496,7 +324,6 @@ def collect_all(page, today):
 
     for category_name, path in CATEGORY_PAGES:
         open_category(page, category_name, path)
-
         category_channels = set()
 
         for offset in range(DAYS):
@@ -504,7 +331,6 @@ def collect_all(page, today):
             label = date_label(selected_day, today)
 
             print(f"  {label} taranıyor...")
-
             select_date(page, label)
 
             extracted = page.evaluate(EXTRACT_JS)
@@ -512,29 +338,26 @@ def collect_all(page, today):
             diagnostics = extracted.get("diagnostics", {})
 
             print(
-                f"    Kanal bağlantısı: {diagnostics.get('channelAnchors', 0)}"
+                f"    Program grubu: "
+                f"{diagnostics.get('programGroupCount', 0)}"
             )
             print(
-                f"    Program bağlantısı: {diagnostics.get('programAnchors', 0)}"
+                f"    Eşleşen kanal: "
+                f"{diagnostics.get('mappedGroupCount', 0)}"
             )
             print(
-                f"    Eşleşen kanal: {diagnostics.get('mappedChannels', 0)}"
-            )
-            print(
-                f"    Eşleşen program: {diagnostics.get('mappedPrograms', 0)}"
+                f"    Eşleşmeyen grup: "
+                f"{diagnostics.get('unmappedGroupCount', 0)}"
             )
 
-            if diagnostics.get("samples"):
+            for sample in diagnostics.get("unmappedSamples", [])[:3]:
                 print(
-                    "    Örnek eşleşmeyen programlar:",
-                    " | ".join(diagnostics["samples"][:3])
+                    "    Eşleşmedi:",
+                    sample.get("firstProgram", "")
                 )
 
             if not rows:
-                print(
-                    f"    UYARI: {category_name} / {label}: "
-                    "program grubu bulunamadı."
-                )
+                print(f"    UYARI: {label} için eşleşen program yok.")
                 continue
 
             day_program_count = 0
@@ -581,8 +404,8 @@ def collect_all(page, today):
                         day_program_count += 1
 
             print(
-                f"    {len(rows)} kanal grubu / "
-                f"{len(category_channels)} kategori kanalı / "
+                f"    {len(rows)} eşleşen grup / "
+                f"{len(category_channels)} kanal / "
                 f"{day_program_count} yeni program"
             )
 
@@ -628,7 +451,6 @@ def build_xml(channel_names, programs):
         display = ET.SubElement(
             channel, "display-name", {"lang": "tr"}
         )
-
         display.text = name
 
     for item in sorted(
@@ -658,12 +480,7 @@ def build_xml(channel_names, programs):
     ET.indent(tree, space="  ")
 
     temp_file = OUTPUT_FILE + ".tmp"
-
-    tree.write(
-        temp_file,
-        encoding="utf-8",
-        xml_declaration=True
-    )
+    tree.write(temp_file, encoding="utf-8", xml_declaration=True)
 
     ET.parse(temp_file)
     os.replace(temp_file, OUTPUT_FILE)
@@ -701,7 +518,7 @@ def main():
 
     print("=" * 68)
     print("TIVIBU 7 GÜNLÜK EPG")
-    print("Kategori sayfalarından kanal ve program toplama")
+    print("Önceki program bağlantısı eşleştirme yöntemi geri yüklendi")
     print(f"Kaynak: {LIVE_TV_URL}")
     print(f"Başlangıç: {today.strftime('%d.%m.%Y')}")
     print(f"Kategori sayısı: {len(CATEGORY_PAGES)}")
