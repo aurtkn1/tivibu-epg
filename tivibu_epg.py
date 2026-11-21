@@ -3,28 +3,30 @@
 # -*- coding: utf-8 -*-
 
 """
-Tivibu 7 Günlük EPG Oluşturucu
+Tivibu 7 Günlük EPG
 
-Eski ve doğrulanmamış GetMultiPrevueData servisi kullanılmaz.
-Tivibu canlı TV sayfası Chromium ile açılır.
-Kanal kodları bağlantılardan ve kanal kartlarının HTML yapısından
-alınır. Programlar kanal kodları üzerinden eşleştirilir.
-
-Bütün doğrulamalar tamamlanmadan mevcut epg.xml değiştirilmez.
+- Chromium üzerinden Tivibu canlı TV sayfasını açar.
+- Sayfadaki tarih seçeneklerini okur.
+- Kanal ve program bağlantılarını inceler.
+- Sayfa gezinmesi sırasında oluşan Playwright hatalarını yeniden dener.
+- Kanal koduyla program eşleştirmesi yapar.
+- Kontroller başarısız olursa mevcut epg.xml dosyasını korur.
 """
 
 import os
 import re
 import time
 import html
-import tempfile
 import xml.etree.ElementTree as ET
 
 from datetime import datetime, timedelta
 from urllib.parse import urljoin, urlparse, parse_qs, unquote
 from zoneinfo import ZoneInfo
 
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import (
+    sync_playwright,
+    TimeoutError as PlaywrightTimeoutError
+)
 
 
 # ============================================================
@@ -43,7 +45,10 @@ MIN_CHANNELS = 20
 MIN_PROGRAMS = 100
 
 PAGE_TIMEOUT = 90000
-WAIT_AFTER_DATE_CLICK = 2500
+WAIT_AFTER_DATE_CLICK = 3000
+
+EVALUATE_RETRIES = 6
+EVALUATE_RETRY_DELAY = 2
 
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) "
@@ -57,6 +62,7 @@ USER_AGENT = (
 # ============================================================
 
 def clean_text(value):
+
     if value is None:
         return ""
 
@@ -67,6 +73,7 @@ def clean_text(value):
 
 
 def normalize_code(value):
+
     if not value:
         return ""
 
@@ -80,6 +87,7 @@ def normalize_code(value):
 
 
 def parse_clock(value):
+
     value = clean_text(value)
 
     match = re.search(
@@ -100,6 +108,7 @@ def parse_clock(value):
 
 
 def make_datetime(day, clock):
+
     if clock is None:
         return None
 
@@ -116,6 +125,7 @@ def make_datetime(day, clock):
 
 
 def parse_date(value):
+
     value = clean_text(value)
 
     formats = (
@@ -128,8 +138,13 @@ def parse_date(value):
     )
 
     for fmt in formats:
+
         try:
-            return datetime.strptime(value, fmt).date()
+            return datetime.strptime(
+                value,
+                fmt
+            ).date()
+
         except ValueError:
             pass
 
@@ -137,6 +152,7 @@ def parse_date(value):
 
 
 def get_program_code(url):
+
     if not url:
         return ""
 
@@ -149,8 +165,10 @@ def get_program_code(url):
 
     parsed = urlparse(url)
 
-    for value in parse_qs(parsed.query).values():
-        for item in value:
+    for values in parse_qs(parsed.query).values():
+
+        for item in values:
+
             code = normalize_code(item)
 
             if code:
@@ -160,16 +178,122 @@ def get_program_code(url):
 
 
 # ============================================================
-# XML
+# SAYFA STABİLİZASYONU
+# ============================================================
+
+def wait_for_page_stable(page):
+
+    try:
+
+        page.wait_for_load_state(
+            "domcontentloaded",
+            timeout=15000
+        )
+
+    except PlaywrightTimeoutError:
+        pass
+
+    try:
+
+        page.wait_for_load_state(
+            "networkidle",
+            timeout=8000
+        )
+
+    except PlaywrightTimeoutError:
+        pass
+
+    page.wait_for_timeout(1200)
+
+
+def evaluate_all_retry(
+    page,
+    selector,
+    expression,
+    argument=None,
+    description="sayfa verisi"
+):
+
+    last_error = None
+
+    for attempt in range(
+        1,
+        EVALUATE_RETRIES + 1
+    ):
+
+        try:
+
+            locator = page.locator(selector)
+
+            if argument is None:
+
+                return locator.evaluate_all(
+                    expression
+                )
+
+            return locator.evaluate_all(
+                expression,
+                argument
+            )
+
+        except Exception as exc:
+
+            last_error = exc
+
+            message = str(exc).lower()
+
+            navigation_error = (
+                "execution context was destroyed" in message
+                or "frame was detached" in message
+                or "most likely because of a navigation" in message
+                or "target closed" in message
+                or "navigation" in message
+            )
+
+            print(
+                f"  Sayfa okuma hatası "
+                f"({description}), "
+                f"deneme {attempt}/{EVALUATE_RETRIES}: "
+                f"{clean_text(exc)[:180]}"
+            )
+
+            if attempt >= EVALUATE_RETRIES:
+                break
+
+            if navigation_error:
+
+                wait_for_page_stable(page)
+
+            else:
+
+                page.wait_for_timeout(
+                    EVALUATE_RETRY_DELAY * 1000
+                )
+
+    raise RuntimeError(
+        f"{description} okunamadı. "
+        f"{EVALUATE_RETRIES} deneme başarısız. "
+        f"Son hata: {last_error}"
+    ) from last_error
+
+
+# ============================================================
+# XML OLUŞTURMA
 # ============================================================
 
 def add_text(parent, tag, value, lang=None):
+
     attrs = {}
 
     if lang:
         attrs["lang"] = lang
 
-    node = ET.SubElement(parent, tag, attrs)
+    node = ET.SubElement(
+        parent,
+        tag,
+        attrs
+    )
+
     node.text = clean_text(value)
 
     return node
@@ -208,6 +332,7 @@ def build_xml(channels, programs):
         icon = info.get("icon", "")
 
         if icon.startswith(("http://", "https://")):
+
             ET.SubElement(
                 channel,
                 "icon",
@@ -244,6 +369,7 @@ def build_xml(channels, programs):
         )
 
         if program.get("description"):
+
             add_text(
                 node,
                 "desc",
@@ -252,6 +378,7 @@ def build_xml(channels, programs):
             )
 
         if program.get("category"):
+
             add_text(
                 node,
                 "category",
@@ -259,7 +386,10 @@ def build_xml(channels, programs):
                 "tr"
             )
 
-    ET.indent(root, space="  ")
+    ET.indent(
+        root,
+        space="  "
+    )
 
     return ET.tostring(
         root,
@@ -269,26 +399,36 @@ def build_xml(channels, programs):
 
 
 # ============================================================
-# SAYFA TARİHLERİ
+# TARİH SEÇENEKLERİ
 # ============================================================
 
 def read_date_options(page):
 
-    result = page.locator("a").evaluate_all("""
+    result = evaluate_all_retry(
+        page,
+        "a",
+        """
         elements => elements.map(a => ({
             text: (a.innerText || '').trim(),
             begin: a.getAttribute('channeldatebegin') || '',
             end: a.getAttribute('channeldateend') || '',
-            html: a.outerHTML
+            href: a.href || ''
         }))
-    """)
+        """,
+        description="tarih seçenekleri"
+    )
 
     dates = {}
 
     for item in result:
 
-        begin = clean_text(item.get("begin"))
-        end = clean_text(item.get("end"))
+        begin = clean_text(
+            item.get("begin")
+        )
+
+        end = clean_text(
+            item.get("end")
+        )
 
         if not begin or not end:
             continue
@@ -303,7 +443,8 @@ def read_date_options(page):
             {
                 "begin": begin,
                 "end": end,
-                "text": item.get("text", "")
+                "text": item.get("text", ""),
+                "href": item.get("href", "")
             }
         )
 
@@ -314,71 +455,60 @@ def select_date(page, date_info):
 
     begin = date_info["begin"]
 
-    locator = page.locator(
-        "a[channeldatebegin]"
-    ).filter(
-        has=page.locator("span")
+    result = evaluate_all_retry(
+        page,
+        "a[channeldatebegin]",
+        """
+        (elements, begin) => {
+            const el = elements.find(
+                x => x.getAttribute('channeldatebegin') === begin
+            );
+
+            if (!el) {
+                return false;
+            }
+
+            el.click();
+
+            return true;
+        }
+        """,
+        begin,
+        "tarih seçimi"
     )
 
-    try:
-
-        target = page.locator(
-            "a[channeldatebegin]"
-        ).evaluate_all(
-            """
-            (elements, begin) => {
-                const found = elements.find(
-                    el => el.getAttribute('channeldatebegin') === begin
-                );
-                return found ? true : false;
-            }
-            """,
-            begin
-        )
-
-        if not target:
-            raise RuntimeError(
-                "Tarih bağlantısı sayfada bulunamadı: " + begin
-            )
-
-        page.locator(
-            "a[channeldatebegin]"
-        ).filter(
-            has_text=re.compile(r".*")
-        ).evaluate_all(
-            """
-            (elements, begin) => {
-                const el = elements.find(
-                    x => x.getAttribute('channeldatebegin') === begin
-                );
-                if (el) el.click();
-            }
-            """,
-            begin
-        )
-
-        page.wait_for_timeout(WAIT_AFTER_DATE_CLICK)
-
-    except Exception as exc:
+    if not result or not any(result):
 
         raise RuntimeError(
-            f"Tarih seçilemedi: {begin}. Hata: {exc}"
-        ) from exc
+            f"Tarih bağlantısı bulunamadı: {begin}"
+        )
+
+    page.wait_for_timeout(
+        WAIT_AFTER_DATE_CLICK
+    )
+
+    wait_for_page_stable(page)
 
 
 # ============================================================
-# KANALLAR
+# KANALLARI OKU
 # ============================================================
 
 def extract_channels(page):
 
-    records = page.locator("a").evaluate_all("""
+    records = evaluate_all_retry(
+        page,
+        "a",
+        """
         elements => elements.map(a => {
+
             let parent = a;
             let combined = '';
 
             for (let i = 0; i < 9 && parent; i++) {
+
                 combined += ' ' + (parent.outerHTML || '');
+
                 parent = parent.parentElement;
             }
 
@@ -395,7 +525,9 @@ def extract_channels(page):
                 ) : ''
             };
         })
-    """)
+        """,
+        description="kanal kartları"
+    )
 
     channels = {}
 
@@ -403,10 +535,12 @@ def extract_channels(page):
 
         href = item.get("href", "")
 
-        if "/kanallar/" not in href:
+        if "/kanallar/" not in href.lower():
             continue
 
-        name = clean_text(item.get("text"))
+        name = clean_text(
+            item.get("text")
+        )
 
         if not name:
             continue
@@ -421,12 +555,18 @@ def extract_channels(page):
         )
 
         if not code:
+            code = normalize_code(href)
+
+        if not code:
             continue
 
         icon = item.get("image", "")
 
         if icon:
-            icon = urljoin(BASE_URL, icon)
+            icon = urljoin(
+                BASE_URL,
+                icon
+            )
 
         channels[code] = {
             "name": name,
@@ -437,18 +577,28 @@ def extract_channels(page):
 
 
 # ============================================================
-# PROGRAMLAR
+# PROGRAMLARI OKU
 # ============================================================
 
-def extract_programs(page, target_day, channels):
+def extract_programs(
+    page,
+    target_day,
+    channels
+):
 
-    records = page.locator("a").evaluate_all("""
+    records = evaluate_all_retry(
+        page,
+        "a",
+        """
         elements => elements.map(a => ({
             text: (a.innerText || '').trim(),
             href: a.href || '',
-            title: a.getAttribute('title') || ''
+            title: a.getAttribute('title') || '',
+            html: a.outerHTML || ''
         }))
-    """)
+        """,
+        description="program bağlantıları"
+    )
 
     programs = {}
 
@@ -459,49 +609,49 @@ def extract_programs(page, target_day, channels):
         )
 
         if not code:
+            code = get_program_code(
+                item.get("html", "")
+            )
+
+        if not code:
             continue
 
         text = clean_text(
-            item.get("text") or item.get("title")
+            item.get("text")
+            or item.get("title")
         )
 
         if not text:
             continue
 
-        # Program metni örneği:
-        # Belgelerle Tarih Yaşam - 00:00 → 00:45 Canlı
-
         match = re.search(
-            r"^(.*?)\s+"
-            r"(?:Yaşam|Film|Dizi|Haber|Spor|Çocuk|Müzik|Belgesel)"
-            r"\s*[-–]\s*"
+            r"^(.*?)\s*[-–]\s*"
             r"(\d{1,2}:\d{2})"
             r"\s*(?:→|->|-)\s*"
             r"(\d{1,2}:\d{2})",
-            text,
-            re.IGNORECASE
+            text
         )
-
-        if not match:
-
-            # Bazı bağlantılarda kategori bulunmayabilir.
-            match = re.search(
-                r"^(.*?)\s*[-–]\s*"
-                r"(\d{1,2}:\d{2})"
-                r"\s*(?:→|->)\s*"
-                r"(\d{1,2}:\d{2})",
-                text
-            )
 
         if not match:
             continue
 
-        title = clean_text(match.group(1))
+        title = clean_text(
+            match.group(1)
+        )
 
-        begin_clock = parse_clock(match.group(2))
-        end_clock = parse_clock(match.group(3))
+        begin_clock = parse_clock(
+            match.group(2)
+        )
 
-        if not title or not begin_clock or not end_clock:
+        end_clock = parse_clock(
+            match.group(3)
+        )
+
+        if (
+            not title
+            or not begin_clock
+            or not end_clock
+        ):
             continue
 
         begin_dt = make_datetime(
@@ -540,7 +690,7 @@ def extract_programs(page, target_day, channels):
 
 
 # ============================================================
-# TARİH DEĞİŞİMİNDE KANAL KODU KORUMA
+# KANAL BİRLEŞTİRME
 # ============================================================
 
 def merge_channels(target, source):
@@ -548,6 +698,7 @@ def merge_channels(target, source):
     for code, info in source.items():
 
         if code not in target:
+
             target[code] = info
             continue
 
@@ -555,6 +706,7 @@ def merge_channels(target, source):
             not target[code].get("icon")
             and info.get("icon")
         ):
+
             target[code]["icon"] = info["icon"]
 
 
@@ -569,7 +721,7 @@ def main():
     print("=" * 68)
     print("TIVIBU 7 GÜNLÜK EPG")
     print("Chromium sayfa taraması")
-    print("Kanal koduyla eşleştirme")
+    print("Sayfa gezinmesine karşı yeniden deneme")
     print("=" * 68)
 
     channels = {}
@@ -593,7 +745,9 @@ def main():
 
         page = context.new_page()
 
-        page.set_default_timeout(PAGE_TIMEOUT)
+        page.set_default_timeout(
+            PAGE_TIMEOUT
+        )
 
         print("[1/4] Tivibu sayfası açılıyor...")
 
@@ -604,25 +758,22 @@ def main():
         )
 
         if response is None or response.status >= 400:
+
             raise RuntimeError(
                 "Tivibu sayfası açılamadı."
             )
 
-        try:
-            page.wait_for_load_state(
-                "networkidle",
-                timeout=20000
-            )
-        except PlaywrightTimeoutError:
-            pass
+        wait_for_page_stable(page)
 
-        page.wait_for_timeout(3000)
+        page.wait_for_timeout(2500)
 
         print("[2/4] Tarih seçenekleri okunuyor...")
 
         date_options = read_date_options(page)
 
-        today = datetime.now(TIMEZONE).date()
+        today = datetime.now(
+            TIMEZONE
+        ).date()
 
         target_dates = [
             date_options[day]
@@ -670,16 +821,17 @@ def main():
             )
 
             if index > 1:
+
                 select_date(
                     page,
                     date_info
                 )
 
+            # Sayfa tarih değiştirdikten sonra yeniden okunur.
             day_channels = extract_channels(page)
 
-            if not day_channels:
-                print("Kanal kodu bulunamadı.")
-            else:
+            if day_channels:
+
                 merge_channels(
                     channels,
                     day_channels
@@ -692,6 +844,7 @@ def main():
             )
 
             for key, program in day_programs.items():
+
                 all_programs[key] = program
 
             successful_days += 1
@@ -709,7 +862,9 @@ def main():
     # SON KONTROLLER
     # ========================================================
 
-    programs = list(all_programs.values())
+    programs = list(
+        all_programs.values()
+    )
 
     named_channels = {
         code: info
@@ -718,20 +873,22 @@ def main():
     }
 
     if successful_days != DAYS:
+
         raise RuntimeError(
             "Yedi günlük veri tamamlanamadı. "
             "Mevcut XML korunuyor."
         )
 
     if len(named_channels) < MIN_CHANNELS:
+
         raise RuntimeError(
             f"Yalnızca {len(named_channels)} kanal bulundu. "
             f"En az {MIN_CHANNELS} bekleniyordu. "
-            "Kanal kodu eşleştirmesi doğrulanamadı. "
             "Mevcut XML korunuyor."
         )
 
     if len(programs) < MIN_PROGRAMS:
+
         raise RuntimeError(
             f"Yalnızca {len(programs)} program bulundu. "
             f"En az {MIN_PROGRAMS} bekleniyordu. "
@@ -745,6 +902,7 @@ def main():
     ]
 
     if invalid:
+
         raise RuntimeError(
             f"{len(invalid)} programın kanalı bulunamadı. "
             "Mevcut XML korunuyor."
@@ -756,13 +914,14 @@ def main():
     })
 
     if len(days_found) < 6:
+
         raise RuntimeError(
             f"Yalnızca {len(days_found)} yayın günü bulundu. "
             "Mevcut XML korunuyor."
         )
 
     # ========================================================
-    # XML OLUŞTUR VE GÜVENLİ KAYDET
+    # XML OLUŞTUR
     # ========================================================
 
     print("[4/4] XML oluşturuluyor...")
@@ -772,7 +931,7 @@ def main():
         programs
     )
 
-    # XML dosyasını değiştirmeden önce geçerliliğini kontrol et.
+    # XML geçerliliğini kaydetmeden önce kontrol et.
     ET.fromstring(xml_bytes)
 
     temp_file = OUTPUT_FILE + ".tmp"
@@ -804,12 +963,24 @@ def main():
     print("TIVIBU EPG İŞLEMİ TAMAMLANDI")
     print("=" * 68)
 
-    print(f"Başarılı gün: {successful_days}/{DAYS}")
-    print(f"Toplam kanal: {len(named_channels)}")
-    print(f"Toplam program: {len(programs)}")
-    print(f"Program bulunan gün: {len(days_found)}")
+    print(
+        f"Başarılı gün: {successful_days}/{DAYS}"
+    )
+
+    print(
+        f"Toplam kanal: {len(named_channels)}"
+    )
+
+    print(
+        f"Toplam program: {len(programs)}"
+    )
+
+    print(
+        f"Program bulunan gün: {len(days_found)}"
+    )
 
     if days_found:
+
         print(
             "İlk gün: "
             + days_found[0].strftime("%d.%m.%Y")
@@ -820,7 +991,9 @@ def main():
             + days_found[-1].strftime("%d.%m.%Y")
         )
 
-    print(f"Dosya: {OUTPUT_FILE}")
+    print(
+        f"Dosya: {OUTPUT_FILE}"
+    )
 
     print(
         f"Süre: {time.time() - started:.1f} saniye"
