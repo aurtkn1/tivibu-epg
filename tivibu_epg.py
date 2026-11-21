@@ -1,6 +1,6 @@
 import re
 import os
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from xml.etree import ElementTree as ET
 
@@ -46,10 +46,6 @@ SELECT_DATE_JS = r"""
     const clean = value =>
         (value || "").replace(/\s+/g, " ").trim();
 
-    const target = new Date(
-        targetDate + "T12:00:00+03:00"
-    );
-
     const dateKey = date => {
         if (!date || isNaN(date.getTime())) return "";
 
@@ -64,16 +60,16 @@ SELECT_DATE_JS = r"""
         value = clean(value);
         if (!value) return null;
 
-        // YYYYMMDD
         if (/^\d{8}$/.test(value)) {
-            const year = Number(value.slice(0, 4));
-            const month = Number(value.slice(4, 6)) - 1;
-            const day = Number(value.slice(6, 8));
-            const result = new Date(year, month, day);
+            const result = new Date(
+                Number(value.slice(0, 4)),
+                Number(value.slice(4, 6)) - 1,
+                Number(value.slice(6, 8))
+            );
+
             return isNaN(result.getTime()) ? null : result;
         }
 
-        // Unix timestamp: seconds or milliseconds
         if (/^\d{10,13}$/.test(value)) {
             let number = Number(value);
 
@@ -83,8 +79,8 @@ SELECT_DATE_JS = r"""
             return isNaN(result.getTime()) ? null : result;
         }
 
-        // ISO and common date formats
         let result = new Date(value);
+
         if (!isNaN(result.getTime())) return result;
 
         const match = value.match(
@@ -104,7 +100,7 @@ SELECT_DATE_JS = r"""
         return null;
     };
 
-    const wanted = dateKey(target);
+    const wanted = targetDate;
     const candidates = Array.from(
         document.querySelectorAll(
             "a[channeldatebegin][channeldateend], [channeldatebegin][channeldateend]"
@@ -114,8 +110,12 @@ SELECT_DATE_JS = r"""
     let matchingElement = null;
 
     for (const element of candidates) {
-        const beginValue = element.getAttribute("channeldatebegin") || "";
-        const endValue = element.getAttribute("channeldateend") || "";
+        const beginValue =
+            element.getAttribute("channeldatebegin") || "";
+
+        const endValue =
+            element.getAttribute("channeldateend") || "";
+
         const label = clean(element.innerText);
 
         const beginDate = parseDate(beginValue);
@@ -140,9 +140,12 @@ SELECT_DATE_JS = r"""
             }
         }
 
+        const dotDate = wanted.split("-").reverse().join(".");
+        const slashDate = wanted.split("-").reverse().join("/");
+
         if (
-            label.includes(targetDate.split("-").reverse().join(".")) ||
-            label.includes(targetDate.split("-").reverse().join("/"))
+            label.includes(dotDate) ||
+            label.includes(slashDate)
         ) {
             matches = true;
         }
@@ -153,7 +156,6 @@ SELECT_DATE_JS = r"""
         }
     }
 
-    // Tarih bağlantısı bulunduysa seç.
     if (matchingElement) {
         const classes = (
             matchingElement.getAttribute("class") || ""
@@ -165,8 +167,7 @@ SELECT_DATE_JS = r"""
         ) {
             return {
                 success: true,
-                method: "active",
-                label: clean(matchingElement.innerText)
+                method: "active"
             };
         }
 
@@ -179,14 +180,12 @@ SELECT_DATE_JS = r"""
 
         return {
             success: true,
-            method: "attribute",
-            label: clean(matchingElement.innerText)
+            method: "attribute"
         };
     }
 
-    // Tarih bağlantısı metin üzerinden aranır.
-    const dotDate = targetDate.split("-").reverse().join(".");
-    const slashDate = targetDate.split("-").reverse().join("/");
+    const dotDate = wanted.split("-").reverse().join(".");
+    const slashDate = wanted.split("-").reverse().join("/");
 
     const textElements = Array.from(
         document.querySelectorAll("a, button, [role='button']")
@@ -208,21 +207,18 @@ SELECT_DATE_JS = r"""
 
             return {
                 success: true,
-                method: "text",
-                label
+                method: "text"
             };
         }
     }
 
     return {
         success: false,
-        method: "not-found",
         candidates: candidates.length,
         details: candidates.slice(0, 15).map(element => ({
             begin: element.getAttribute("channeldatebegin"),
             end: element.getAttribute("channeldateend"),
-            text: clean(element.innerText),
-            className: element.getAttribute("class") || ""
+            text: clean(element.innerText)
         }))
     };
 }
@@ -241,11 +237,10 @@ OPEN_CHANNEL_JS = r"""
     if (!cards.length) {
         return {
             success: false,
-            reason: "Kart DOM içinde bulunamadı"
+            reason: "Kanal kartı bulunamadı"
         };
     }
 
-    // Gizli kopyalar yerine ekranda gerçekten bulunan kartı seç.
     const visibleCard = cards.find(card => {
         const style = window.getComputedStyle(card);
         const rect = card.getBoundingClientRect();
@@ -270,7 +265,13 @@ OPEN_CHANNEL_JS = r"""
     const icon = card.querySelector(".openIcon");
 
     if (icon) {
-        icon.click();
+        icon.dispatchEvent(
+            new MouseEvent("click", {
+                bubbles: true,
+                cancelable: true,
+                view: window
+            })
+        );
 
         return {
             success: true,
@@ -279,7 +280,13 @@ OPEN_CHANNEL_JS = r"""
         };
     }
 
-    card.click();
+    card.dispatchEvent(
+        new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            view: window
+        })
+    );
 
     return {
         success: true,
@@ -342,6 +349,32 @@ EXTRACT_PROGRAMS_JS = r"""
     });
 
     return programs;
+}
+"""
+
+
+DIAGNOSE_PROGRAMS_JS = r"""
+(channelId) => {
+    const links = Array.from(
+        document.querySelectorAll('a[href*="/rv?"]')
+    );
+
+    const ids = new Set();
+
+    links.forEach(link => {
+        const href = link.getAttribute("href") || "";
+        const match = href.match(/ch\d+/i);
+
+        if (match) ids.add(match[0]);
+    });
+
+    return {
+        totalLinks: links.length,
+        matchingId: Array.from(ids).some(
+            id => id.toLowerCase() === channelId.toLowerCase()
+        ),
+        sampleIds: Array.from(ids).slice(0, 12)
+    };
 }
 """
 
@@ -484,7 +517,7 @@ def select_date(page, target_date):
 
         for item in result.get("details", [])[:10]:
             log(
-                "  Tarih bağlantısı: "
+                "  Tarih: "
                 f"başlangıç={item.get('begin')} "
                 f"bitiş={item.get('end')} "
                 f"metin={item.get('text')}"
@@ -495,8 +528,7 @@ def select_date(page, target_date):
     wait_page(page, 1500)
 
     log(
-        "Tarih seçildi: "
-        f"{target_date.strftime('%d.%m.%Y')} "
+        f"Tarih seçildi: {target_date.strftime('%d.%m.%Y')} "
         f"({result.get('method')})"
     )
 
@@ -536,14 +568,11 @@ def open_channel_and_read_programs(page, channel):
         log(f"  Kanal açılamadı: {channel_name}: {error}")
         return []
 
-    close_overlays(page)
-
+    # Her kanal açılışından sonra programların yüklenmesini bekle.
+    # İkinci kez tıklama yapılmaz; bu, açık paneli kapatabilir.
     programs = []
 
-    # Kanalın program bağlantılarının yüklenmesini bekle.
-    for attempt in range(5):
-        page.wait_for_timeout(500)
-
+    for attempt in range(10):
         close_overlays(page)
 
         try:
@@ -557,22 +586,28 @@ def open_channel_and_read_programs(page, channel):
         if programs:
             break
 
-    # İlk tıklamada program gelmediyse kartı bir kez daha açmayı dene.
+        page.wait_for_timeout(500)
+
     if not programs:
         try:
-            page.evaluate(
-                OPEN_CHANNEL_JS,
+            diagnostic = page.evaluate(
+                DIAGNOSE_PROGRAMS_JS,
                 channel_id
             )
 
-            page.wait_for_timeout(1000)
+            if diagnostic["totalLinks"] == 0:
+                log("  Program listesi sayfaya yüklenmedi.")
+            elif not diagnostic["matchingId"]:
+                log(
+                    "  Program bağlantıları var ancak kanal ID'si "
+                    f"eşleşmedi. Bulunan ID örnekleri: "
+                    f"{', '.join(diagnostic['sampleIds'])}"
+                )
+            else:
+                log("  Kanal ID'si bulundu ancak program bilgileri okunamadı.")
 
-            programs = page.evaluate(
-                EXTRACT_PROGRAMS_JS,
-                channel_id
-            )
         except Exception:
-            programs = []
+            pass
 
     log(f"  Program sayısı: {len(programs)}")
 
@@ -608,7 +643,6 @@ def collect_day(page, day, channels, all_programs):
 
     close_overlays(page)
 
-    # Lazy-load kanal kartlarını yükle.
     previous_count = -1
     stable_count = 0
 
@@ -839,7 +873,7 @@ def main():
     log("=" * 65)
     log("TIVIBU 7 GÜNLÜK EPG")
     log("Yalnızca TÜM KANALLAR kategorisi")
-    log("Tarih seçimi ve kanal açma işlemleri düzeltildi.")
+    log("Tarih seçimi ve kanal program yüklemesi kontrol ediliyor.")
     log("=" * 65)
 
     channels = {}
