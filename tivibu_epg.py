@@ -21,7 +21,7 @@ DAYS = 7
 PAGE_TIMEOUT = 60000
 DATE_WAIT_MS = 1100
 
-# Yalnızca Tüm Kanallar sayfası
+# Yalnızca Tüm Kanallar sayfası taranacak.
 CATEGORY_PAGES = [
     ("Tüm Kanallar", "/canli-tv"),
 ]
@@ -32,7 +32,7 @@ BAD_CHANNELS = {
     "TİVİBU TANITIM SAYFASI",
 }
 
-# F12 ile doğrulanmış kanal ID'si
+# F12 üzerinden doğrulanmış ID.
 KNOWN_CHANNEL_IDS = {
     "DMAX": "ch00000000000000001124",
 }
@@ -48,163 +48,143 @@ CATEGORY_RE = re.compile(
 )
 
 
-# Sayfadaki gerçek kanal kartlarını ve program bağlantılarını okur.
+# Kanal kartlarını ve bütün sayfadaki program bağlantılarını
+# gerçek Tivibu kanal ID'si üzerinden eşleştirir.
 EXTRACT_JS = r"""() => {
     const norm = s => (s || '').replace(/\s+/g, ' ').trim();
 
-    const timeRe = /\d{1,2}:\d{2}\s*(?:→|➜|[-–])\s*\d{1,2}:\d{2}/;
+    const timeRe =
+        /\d{1,2}:\d{2}\s*(?:→|➜|[-–])\s*\d{1,2}:\d{2}/;
 
+    const getChannelId = href => {
+        if (!href) return '';
+
+        let decoded = href;
+
+        try {
+            decoded = decodeURIComponent(href);
+        } catch (e) {}
+
+        const match = decoded.match(
+            /(?:\||%7c)(ch[a-z0-9_-]+)/i
+        );
+
+        return match ? match[1] : '';
+    };
+
+    // Önce bütün gerçek kanal kartlarını oku.
     const cards = [
         ...document.querySelectorAll(
             '.fullLink[channelcode][title]'
         )
     ];
 
-    const cardData = cards.map(card => ({
-        name: norm(card.getAttribute('title')),
-        channel_id: norm(card.getAttribute('channelcode'))
-    }));
-
-    const rows = [];
+    const channelMap = new Map();
 
     for (const card of cards) {
         const name = norm(card.getAttribute('title'));
-        const channelId = norm(card.getAttribute('channelcode'));
+        const channelId = norm(
+            card.getAttribute('channelcode')
+        );
 
         if (!name || !channelId) continue;
 
-        const links = [...card.querySelectorAll('a')];
+        const key = channelId.toLowerCase();
 
-        const programLinks = links.filter(a =>
-            timeRe.test(norm(a.innerText || a.textContent))
-        );
-
-        const items = programLinks.map(a =>
-            norm(a.innerText || a.textContent)
-        );
-
-        if (items.length) {
-            rows.push({
+        if (!channelMap.has(key)) {
+            channelMap.set(key, {
                 name,
-                channel_id: channelId,
-                items
+                channel_id: channelId
             });
         }
     }
 
-    // Bazı sayfa yapılarında program bağlantıları
-    // kanal kartının dışında bulunabilir.
-    // Bu durumda program bağlantısı href'i üzerinden
-    // eski gruplama yöntemi kullanılır.
-    if (rows.length === 0) {
-        const groups = new Map();
+    // Sayfadaki bütün program bağlantılarını tara.
+    // Program bağlantıları kanal kartının dışında da olabilir.
+    const groups = new Map();
 
-        for (const a of document.querySelectorAll('a')) {
-            const text = norm(a.innerText || a.textContent);
+    const anchors = [
+        ...document.querySelectorAll('a')
+    ];
 
-            if (!a.href || !timeRe.test(text)) continue;
+    let timeLinkCount = 0;
+    let unmatchedLinkCount = 0;
 
-            if (!groups.has(a.href)) {
-                groups.set(a.href, []);
-            }
+    const unmatchedIds = new Set();
 
-            groups.get(a.href).push(text);
-        }
+    for (const a of anchors) {
+        const text = norm(a.innerText || a.textContent);
 
-        const logoNames = [];
+        if (!timeRe.test(text)) continue;
 
-        for (const img of document.querySelectorAll('img[alt]')) {
-            const alt = norm(img.getAttribute('alt'));
+        timeLinkCount++;
 
-            if (!/^Kanal\s*:/i.test(alt)) continue;
+        let channelId = getChannelId(a.href);
 
-            const name = alt.replace(/^Kanal\s*:\s*/i, '').trim();
+        // URL'den ID alınamazsa en yakın kanal kartını kontrol et.
+        if (!channelId) {
+            const card = a.closest(
+                '.fullLink[channelcode][title]'
+            );
 
-            if (name && !logoNames.includes(name)) {
-                logoNames.push(name);
-            }
-        }
-
-        const usableNames = logoNames.filter(name =>
-            ![
-                'BENİM KANALIM',
-                'FAVORİ KANALLARIM'
-            ].includes(name.toLocaleUpperCase('tr-TR'))
-        );
-
-        let index = 0;
-
-        for (const [href, items] of groups.entries()) {
-            let name = '';
-            let channelId = '';
-
-            const firstLink = [...document.querySelectorAll('a')]
-                .find(a => a.href === href);
-
-            let node = firstLink;
-
-            for (
-                let depth = 0;
-                depth < 14 && node;
-                depth++, node = node.parentElement
-            ) {
-                const card = node.matches(
-                    '.fullLink[channelcode][title]'
-                )
-                    ? node
-                    : node.querySelector(
-                        '.fullLink[channelcode][title]'
-                    );
-
-                if (card) {
-                    name = norm(card.getAttribute('title'));
-                    channelId = norm(
-                        card.getAttribute('channelcode')
-                    );
-                    break;
-                }
-
-                const imgs = [
-                    ...node.querySelectorAll('img[alt]')
-                ].map(img =>
-                    norm(img.getAttribute('alt'))
-                ).filter(alt =>
-                    /^Kanal\s*:/i.test(alt)
+            if (card) {
+                channelId = norm(
+                    card.getAttribute('channelcode')
                 );
-
-                if (imgs.length === 1) {
-                    name = imgs[0]
-                        .replace(/^Kanal\s*:\s*/i, '')
-                        .trim();
-                }
-            }
-
-            if (!name && index < usableNames.length) {
-                name = usableNames[index];
-            }
-
-            index++;
-
-            if (name && channelId && items.length) {
-                rows.push({
-                    name,
-                    channel_id: channelId,
-                    items
-                });
             }
         }
+
+        if (!channelId) {
+            unmatchedLinkCount++;
+            continue;
+        }
+
+        const key = channelId.toLowerCase();
+
+        if (!channelMap.has(key)) {
+            unmatchedIds.add(channelId);
+            continue;
+        }
+
+        if (!groups.has(key)) {
+            groups.set(key, []);
+        }
+
+        groups.get(key).push(text);
+    }
+
+    // Her kanalın adı karttan, programları bağlantılardan gelir.
+    const rows = [];
+
+    for (const [key, items] of groups.entries()) {
+        const channel = channelMap.get(key);
+
+        if (!channel || !items.length) continue;
+
+        rows.push({
+            name: channel.name,
+            channel_id: channel.channel_id,
+            items
+        });
     }
 
     return {
         rows,
-        cards: cardData,
+        cards: [...channelMap.values()],
         diagnostics: {
             cardCount: cards.length,
-            cardIdCount: cardData.filter(
-                x => x.channel_id
-            ).length,
-            programRowCount: rows.length,
-            sampleCards: cardData.slice(0, 10)
+            uniqueChannelCount: channelMap.size,
+            timeLinkCount,
+            matchedChannelCount: rows.length,
+            unmatchedLinkCount,
+            unmatchedChannelIds: [...unmatchedIds],
+            sampleCards: [...channelMap.values()].slice(0, 10),
+            sampleRows: rows.slice(0, 5).map(row => ({
+                name: row.name,
+                channel_id: row.channel_id,
+                programCount: row.items.length,
+                firstProgram: row.items[0]
+            }))
         }
     };
 }"""
@@ -217,35 +197,6 @@ def clean_text(value):
 
 def normalize_channel_name(value):
     return clean_text(value).casefold()
-
-
-def slugify(value):
-    value = clean_text(value)
-
-    replacements = {
-        "ç": "c",
-        "ğ": "g",
-        "ı": "i",
-        "ö": "o",
-        "ş": "s",
-        "ü": "u",
-        "â": "a",
-        "î": "i",
-        "û": "u",
-    }
-
-    for old, new in replacements.items():
-        value = value.replace(old, new).replace(old.upper(), new)
-
-    value = unicodedata.normalize("NFKD", value)
-
-    value = "".join(
-        c for c in value if not unicodedata.combining(c)
-    ).lower()
-
-    value = re.sub(r"[^a-z0-9]+", "_", value).strip("_")
-
-    return value or "channel"
 
 
 def parse_program_line(line):
@@ -443,7 +394,11 @@ def collect_all(page, today):
     )
 
     for category_name, path in CATEGORY_PAGES:
-        open_category(page, category_name, path)
+        open_category(
+            page,
+            category_name,
+            path
+        )
 
         for offset in range(DAYS):
             selected_day = today + timedelta(days=offset)
@@ -457,38 +412,57 @@ def collect_all(page, today):
 
             rows = extracted.get("rows", [])
             cards = extracted.get("cards", [])
+            diagnostics = extracted.get("diagnostics", {})
 
             print(
                 f"  Kanal kartı: "
-                f"{extracted.get('diagnostics', {}).get('cardCount', 0)}"
+                f"{diagnostics.get('cardCount', 0)}"
+            )
+
+            print(
+                f"  Benzersiz kanal ID: "
+                f"{diagnostics.get('uniqueChannelCount', 0)}"
+            )
+
+            print(
+                f"  Program bağlantısı: "
+                f"{diagnostics.get('timeLinkCount', 0)}"
+            )
+
+            print(
+                f"  Eşleşen kanal: "
+                f"{diagnostics.get('matchedChannelCount', 0)}"
             )
 
             if offset == 0:
-                print("\n  GERÇEK TİVİBU KANAL ID LİSTESİ")
-
-                seen = set()
+                print("\n===== GERÇEK KANAL ID LİSTESİ =====")
 
                 for card in cards:
-                    name = clean_text(card.get("name"))
-                    channel_id = clean_text(
-                        card.get("channel_id")
+                    print(
+                        f"  {card['name']}: "
+                        f"{card['channel_id']}"
                     )
 
-                    if (
-                        name
-                        and channel_id
-                        and channel_id not in seen
-                    ):
-                        seen.add(channel_id)
-                        print(f"  {name}: {channel_id}")
+                print("\n===== EŞLEŞTİRME ÖRNEKLERİ =====")
+
+                for sample in diagnostics.get(
+                    "sampleRows", []
+                ):
+                    print(
+                        f"  {sample['name']} | "
+                        f"{sample['channel_id']} | "
+                        f"{sample['programCount']} program"
+                    )
+
+                if diagnostics.get("unmatchedChannelIds"):
+                    print(
+                        "\nKartlarda bulunamayan bağlantı ID'leri:",
+                        diagnostics["unmatchedChannelIds"]
+                    )
 
             if not rows:
                 print(
-                    "  UYARI: Program satırı bulunamadı."
-                )
-                print(
-                    "  Tanılama:",
-                    extracted.get("diagnostics", {})
+                    "  UYARI: Kanal-program eşleşmesi bulunamadı."
                 )
                 continue
 
@@ -512,12 +486,11 @@ def collect_all(page, today):
                     re.IGNORECASE
                 ):
                     print(
-                        f"  GEÇERSİZ ID: {channel_name} "
-                        f"| {channel_id}"
+                        f"  GEÇERSİZ ID: "
+                        f"{channel_name} | {channel_id}"
                     )
                     continue
 
-                # DMAX için F12'den doğrulanmış ID.
                 known_id = KNOWN_CHANNEL_IDS.get(
                     channel_name.upper()
                 )
@@ -528,7 +501,7 @@ def collect_all(page, today):
                         f"| Kart: {channel_id} "
                         f"| F12: {known_id}"
                     )
-                    channel_id = known_id
+                    continue
 
                 programs = assign_times(
                     row.get("items", []),
@@ -543,11 +516,10 @@ def collect_all(page, today):
                 existing = all_channels.get(name_key)
 
                 if existing and existing["id"] != channel_id:
-                    print(
-                        f"  UYARI: {channel_name} için farklı ID geldi: "
-                        f"{existing['id']} / {channel_id}"
+                    raise RuntimeError(
+                        f"Kanal ID çakışması: {channel_name} "
+                        f"({existing['id']} / {channel_id})"
                     )
-                    continue
 
                 all_channels[name_key] = {
                     "name": channel_name,
@@ -578,7 +550,7 @@ def collect_all(page, today):
                         day_program_count += 1
 
             print(
-                f"  {len(rows)} program grubu / "
+                f"  {len(rows)} eşleşen kanal / "
                 f"{len(all_channels)} toplam kanal / "
                 f"{day_program_count} yeni program"
             )
@@ -600,26 +572,20 @@ def build_xml(channels, programs):
         }
     )
 
-    channel_ids = {
-        normalize_channel_name(channel["name"]): channel["id"]
-        for channel in channels
-    }
-
     for channel in channels:
-        ET.SubElement(
+        channel_element = ET.SubElement(
             root,
             "channel",
             {"id": channel["id"]}
         )
 
-        display = root[-1]
-        display_name = ET.SubElement(
-            display,
+        display = ET.SubElement(
+            channel_element,
             "display-name",
             {"lang": "tr"}
         )
 
-        display_name.text = channel["name"]
+        display.text = channel["name"]
 
     for item in sorted(
         programs,
@@ -691,6 +657,15 @@ def validate_data(channels, programs):
             "Mevcut XML korunuyor."
         )
 
+    valid_ids = set(ids)
+
+    for program in programs:
+        if program["channel_id"] not in valid_ids:
+            raise RuntimeError(
+                f"Programın kanal ID'si XML kanal listesinde yok: "
+                f"{program['channel_id']}"
+            )
+
 
 def main():
     started = time.time()
@@ -730,7 +705,10 @@ def main():
 
         browser.close()
 
-    validate_data(channels, programs)
+    validate_data(
+        channels,
+        programs
+    )
 
     build_xml(
         channels,
