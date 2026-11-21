@@ -79,42 +79,51 @@ EXTRACT_JS = r"""() => {
     let matchedName = '';
     let matchedNode = null;
 
-    // Program bağlantısından yukarı çıkarak, yalnızca tek kanal logosu
-    // ve yalnızca bu programa ait bağlantıları içeren en yakın kartı bul.
-    for (let depth = 0; depth < 18 && node; depth++, node = node.parentElement) {
+    // Program bağlantısından yukarı çıkarak kanal logosunu ara.
+    // Önceki sürümde 18 seviye sınırı ve tek URL şartı eşleşmeyi engelliyordu.
+    for (let depth = 0; depth < 35 && node; depth++, node = node.parentElement) {
       const logos = [...node.querySelectorAll('img[alt]')]
         .map(img => norm(img.getAttribute('alt')))
         .filter(alt => /^Kanal\s*:/i.test(alt));
 
-      const timeLinks = [...node.querySelectorAll('a')].filter(a =>
-        timeRe.test(norm(a.innerText || a.textContent))
-      );
-      const hrefs = new Set(timeLinks.map(a => a.href));
+      // Aynı kapsayıcı içinde farklı program bağlantıları olabilir.
+      // URL sayısı artık tek olmak zorunda değil.
+      // Ancak kanal logosu tek ve benzersiz olmalı.
+      const uniqueLogos = [...new Set(logos)];
 
-      if (logos.length === 1 && hrefs.size === 1 && hrefs.has(href)) {
-        matchedName = logos[0].replace(/^Kanal\s*:\s*/i, '').trim();
+      if (uniqueLogos.length === 1) {
+        matchedName = uniqueLogos[0].replace(/^Kanal\s*:\s*/i, '').trim();
         matchedNode = node;
         break;
       }
     }
 
-    // Sıra bazlı isim ataması KESİNLİKLE yapılmaz.
-    // Eşleşme kesin değilse bu grup atlanır ve tanılamaya yazılır.
+    // Sıra bazlı isim ataması yapılmaz.
+    // Eşleşme kesin değilse grup atlanır.
     if (!matchedName) {
-      unmapped.push({ href, firstProgram: items[0].text, itemCount: items.length });
+      unmapped.push({
+        href,
+        firstProgram: items[0].text,
+        itemCount: items.length
+      });
       continue;
     }
 
-    // Aynı kartın program bağlantılarını bir kez al.
+    // Aynı kanal bağlantısına ait programları al.
     const cardLinks = [...matchedNode.querySelectorAll('a')].filter(a =>
       a.href === href && timeRe.test(norm(a.innerText || a.textContent))
     );
+
     const texts = cardLinks
       .map(a => norm(a.innerText || a.textContent))
       .filter(Boolean);
 
     if (texts.length) {
-      out.push({ name: matchedName, href, items: texts });
+      out.push({
+        name: matchedName,
+        href,
+        items: texts
+      });
     }
   }
 
@@ -385,6 +394,7 @@ def collect_all(page, today):
                     f"{diagnostics.get('unmappedGroupCount')} / "
                     f"{diagnostics.get('programGroupCount')}"
                 )
+
                 for sample in diagnostics.get("unmappedSamples", [])[:3]:
                     print(
                         "    Eşleşmedi:",
