@@ -2,21 +2,18 @@
 import re
 import os
 import sys
-import time
 import html
 import tempfile
 import xml.etree.ElementTree as ET
 
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
-from urllib.parse import unquote, urlparse, parse_qs
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 
 # ============================================================
 # TIVIBU 7 GÜNLÜK EPG
-# Kaynak: https://www.tivibu.com.tr/canli-tv
 # ============================================================
 
 BASE_URL = "https://www.tivibu.com.tr"
@@ -29,6 +26,7 @@ MIN_CHANNELS = 30
 MIN_PROGRAMS = 100
 
 TIMEOUT = 60000
+DATE_WAIT_MS = 2500
 
 TIME_PATTERN = re.compile(
     r"(?P<start>\d{1,2}:\d{2})\s*(?:→|->|–|-)\s*(?P<end>\d{1,2}:\d{2})"
@@ -57,7 +55,6 @@ class TivibuHTMLParser(HTMLParser):
 
         self.anchors = []
         self.current_anchor = None
-
         self.images = []
 
     def handle_starttag(self, tag, attrs):
@@ -65,6 +62,7 @@ class TivibuHTMLParser(HTMLParser):
         attrs = dict(attrs)
 
         if tag == "a":
+
             self.current_anchor = {
                 "href": html.unescape(attrs.get("href", "")),
                 "text": "",
@@ -73,9 +71,12 @@ class TivibuHTMLParser(HTMLParser):
 
         elif tag == "img":
 
-            alt = html.unescape(attrs.get("alt", "")).strip()
+            alt = html.unescape(
+                attrs.get("alt", "")
+            ).strip()
 
             if alt:
+
                 self.images.append(alt)
 
                 if self.current_anchor is not None:
@@ -121,7 +122,7 @@ def normalize_channel_id(href):
     if not href:
         return None
 
-    decoded = unquote(html.unescape(href))
+    decoded = html.unescape(str(href))
 
     match = CHANNEL_ID_PATTERN.search(decoded)
 
@@ -157,7 +158,9 @@ def extract_channel_name(anchor):
         if image:
             candidates.append(image)
 
-    text = normalize_text(anchor.get("text", ""))
+    text = normalize_text(
+        anchor.get("text", "")
+    )
 
     if text:
         candidates.append(text)
@@ -211,7 +214,10 @@ def parse_program_text(text):
         title_part
     ).strip()
 
-    title_part = CATEGORY_PATTERN.sub("", title_part).strip()
+    title_part = CATEGORY_PATTERN.sub(
+        "",
+        title_part
+    ).strip()
 
     if not title_part:
         return None
@@ -224,7 +230,7 @@ def parse_program_text(text):
 
 
 # ============================================================
-# SAYFADAN KANAL VE PROGRAMLARI ÇIKAR
+# KANAL VE PROGRAM VERİLERİNİ ÇIKAR
 # ============================================================
 
 def extract_page_data(source):
@@ -236,10 +242,7 @@ def extract_page_data(source):
 
     program_groups = {}
 
-    # --------------------------------------------------------
-    # 1. Kanal adlarını ve kanal kimliklerini bul
-    # --------------------------------------------------------
-
+    # Kanal adlarını bul
     for anchor in parser.anchors:
 
         channel_id = normalize_channel_id(
@@ -259,27 +262,25 @@ def extract_page_data(source):
             channel_names[channel_id] = name
             ordered_channel_ids.append(channel_id)
 
-    # --------------------------------------------------------
-    # 2. Program bağlantılarını kanal kimliğine göre grupla
-    # --------------------------------------------------------
-
+    # Program bağlantılarını bul
     for anchor in parser.anchors:
 
         href = anchor.get("href", "")
 
-        decoded_href = unquote(
-            html.unescape(href)
-        )
+        decoded_href = html.unescape(href)
 
-        # Tivibu program bağlantıları:
-        # /rv?datatype=2&i=2|ch000000...
         if "datatype=2" not in decoded_href:
             continue
 
-        if not re.search(r"i\s*=\s*2", decoded_href):
+        if not re.search(
+            r"i\s*=\s*2",
+            decoded_href
+        ):
             continue
 
-        channel_id = normalize_channel_id(decoded_href)
+        channel_id = normalize_channel_id(
+            decoded_href
+        )
 
         if not channel_id:
             continue
@@ -296,10 +297,7 @@ def extract_page_data(source):
 
         program_groups[channel_id].append(program)
 
-    # --------------------------------------------------------
-    # 3. Kanal adı eksikse sayfa sırasını kullan
-    # --------------------------------------------------------
-
+    # Kanal adı bulunamazsa görsel alt metinlerini kullan
     if not channel_names and program_groups:
 
         image_names = []
@@ -325,10 +323,7 @@ def extract_page_data(source):
             if index < len(image_names):
                 channel_names[channel_id] = image_names[index]
 
-    # --------------------------------------------------------
-    # 4. Kanal ve programları birleştir
-    # --------------------------------------------------------
-
+    # Kanal ve programları birleştir
     result = {}
 
     for channel_id, programs in program_groups.items():
@@ -361,114 +356,134 @@ def extract_page_data(source):
 
 
 # ============================================================
-# TARİH SEÇENEKLERİ
+# TARİH SEÇİMİ
+# ESKİ ÇALIŞAN SÜRÜMDEKİ SELECTOR KULLANILIYOR
 # ============================================================
 
-def get_date_labels(page):
+def date_label(day, today):
 
-    labels = []
+    if day == today:
+        return "Bugün"
 
-    elements = page.locator("a, button, option, li")
+    if day == today + timedelta(days=1):
+        return "Yarın"
 
-    count = min(elements.count(), 3000)
+    return day.strftime("%d.%m.%Y")
+
+
+def build_seven_date_labels(today):
+
+    return [
+        date_label(
+            today + timedelta(days=offset),
+            today
+        )
+        for offset in range(DAYS_TO_FETCH)
+    ]
+
+
+def find_date_link(page, label):
+
+    links = page.locator(
+        "a[channeldatebegin][channeldateend]"
+    )
+
+    count = links.count()
 
     for index in range(count):
 
+        link = links.nth(index)
+
         try:
-            element = elements.nth(index)
 
             text = normalize_text(
-                element.inner_text(timeout=500)
+                link.inner_text(timeout=1500)
             )
 
-            if not text:
-                continue
-
-            if text in ("Bugün", "Yarın", "Dün"):
-                if text not in labels:
-                    labels.append(text)
-                continue
-
-            if re.fullmatch(
-                r"\d{1,2}\.\d{1,2}\.\d{4}",
-                text
-            ):
-                if text not in labels:
-                    labels.append(text)
+            if text == label:
+                return link
 
         except Exception:
             continue
 
-    return labels
+    return None
 
 
 def select_date(page, label):
 
-    locator = page.get_by_text(
-        label,
-        exact=True
+    link = find_date_link(
+        page,
+        label
     )
 
-    count = locator.count()
+    if link is None:
 
-    if count == 0:
-        raise RuntimeError(
-            "Tarih seçeneği bulunamadı: " + label
+        available = []
+
+        links = page.locator(
+            "a[channeldatebegin][channeldateend]"
         )
 
-    clicked = False
+        for index in range(links.count()):
 
-    for index in range(min(count, 10)):
+            try:
+                available.append(
+                    normalize_text(
+                        links.nth(index).inner_text(timeout=1000)
+                    )
+                )
+            except Exception:
+                pass
 
-        element = locator.nth(index)
-
-        try:
-
-            if not element.is_visible():
-                continue
-
-            element.click(timeout=5000)
-
-            clicked = True
-            break
-
-        except Exception:
-            continue
-
-    if not clicked:
         raise RuntimeError(
-            "Tarih seçeneğine tıklanamadı: " + label
-        )
-
-    page.wait_for_timeout(1800)
-
-
-def build_seven_date_labels(page):
-
-    available = get_date_labels(page)
-
-    if not available:
-        raise RuntimeError(
-            "Tivibu sayfasında tarih seçenekleri bulunamadı."
-        )
-
-    if "Bugün" not in available:
-        raise RuntimeError(
-            "Bugün seçeneği bulunamadı. Bulunanlar: "
+            "Tarih bağlantısı bulunamadı: "
+            + label
+            + ". Bulunan tarih bağlantıları: "
             + ", ".join(available)
         )
 
-    today_index = available.index("Bugün")
+    old_url = page.url
 
-    selected = available[today_index:today_index + DAYS_TO_FETCH]
+    try:
 
-    if len(selected) < DAYS_TO_FETCH:
-        raise RuntimeError(
-            "7 günlük EPG için yeterli tarih seçeneği yok. "
-            "Bulunan: " + str(len(selected))
+        link.click(
+            timeout=15000,
+            force=True
         )
 
-    return selected
+    except PlaywrightTimeoutError:
+
+        # Tıklama sonrası sayfa geçişi gecikirse
+        # yüklenme kontrolü aşağıda yapılır.
+        pass
+
+    try:
+
+        page.wait_for_load_state(
+            "domcontentloaded",
+            timeout=15000
+        )
+
+    except PlaywrightTimeoutError:
+        pass
+
+    page.wait_for_timeout(
+        DATE_WAIT_MS
+    )
+
+    print(
+        "  Tarih bağlantısı seçildi:",
+        label,
+        flush=True
+    )
+
+    if page.url != old_url:
+
+        print(
+            "  Yeni sayfa adresi:",
+            page.url,
+            flush=True
+        )
 
 
 # ============================================================
@@ -483,16 +498,15 @@ def date_from_label(label, base_date):
     if label == "Yarın":
         return base_date + timedelta(days=1)
 
-    if label == "Dün":
-        return base_date - timedelta(days=1)
-
     try:
+
         return datetime.strptime(
             label,
             "%d.%m.%Y"
         ).date()
 
     except ValueError:
+
         return None
 
 
@@ -520,9 +534,13 @@ def collect_seven_days(page, date_labels, base_date):
 
     all_channels = {}
 
-    total_programs = 0
+    # Bugün sayfa açıldığında zaten seçili.
+    # Bugün için tıklama yapılmıyor.
 
-    for day_index, label in enumerate(date_labels, 1):
+    for day_index, label in enumerate(
+        date_labels,
+        1
+    ):
 
         print(
             f"[{day_index}/{DAYS_TO_FETCH}] "
@@ -530,37 +548,49 @@ def collect_seven_days(page, date_labels, base_date):
             flush=True
         )
 
-        select_date(page, label)
+        if label != "Bugün":
+
+            select_date(
+                page,
+                label
+            )
+
+        else:
+
+            page.wait_for_timeout(1000)
 
         source = page.content()
 
-        day_data, diagnostics = extract_page_data(source)
+        day_data, diagnostics = extract_page_data(
+            source
+        )
 
         print(
-            "  Kanal bağlantısı: "
-            + str(diagnostics["anchors"]),
+            "  HTML bağlantısı:",
+            diagnostics["anchors"],
             flush=True
         )
 
         print(
-            "  Kanal adı: "
-            + str(diagnostics["channel_names"]),
+            "  Kanal adı bulunan:",
+            diagnostics["channel_names"],
             flush=True
         )
 
         print(
-            "  Program grubu: "
-            + str(diagnostics["program_groups"]),
+            "  Program grubu:",
+            diagnostics["program_groups"],
             flush=True
         )
 
         print(
-            "  Eşleşen kanal: "
-            + str(diagnostics["matched_channels"]),
+            "  Eşleşen kanal:",
+            diagnostics["matched_channels"],
             flush=True
         )
 
         if not day_data:
+
             raise RuntimeError(
                 label
                 + " için kanal-program verisi bulunamadı. "
@@ -573,9 +603,13 @@ def collect_seven_days(page, date_labels, base_date):
         )
 
         if current_day is None:
+
             raise RuntimeError(
-                "Tarih dönüştürülemedi: " + label
+                "Tarih dönüştürülemedi: "
+                + label
             )
+
+        daily_program_count = 0
 
         for channel_id, channel in day_data.items():
 
@@ -608,18 +642,15 @@ def collect_seven_days(page, date_labels, base_date):
                     "end": end_dt
                 })
 
-                total_programs += 1
+                daily_program_count += 1
 
         print(
-            f"  Günlük program sayısı: "
-            f"{diagnostics['program_count']}",
+            "  Günlük program sayısı:",
+            daily_program_count,
             flush=True
         )
 
-    # --------------------------------------------------------
     # Yinelenen kayıtları temizle
-    # --------------------------------------------------------
-
     for channel in all_channels.values():
 
         unique = {}
@@ -720,12 +751,14 @@ def validate_data(channels, program_count):
     channel_count = len(channels)
 
     if channel_count < MIN_CHANNELS:
+
         raise RuntimeError(
             f"Kanal sayısı yetersiz: {channel_count}. "
             f"Minimum: {MIN_CHANNELS}. XML korunuyor."
         )
 
     if program_count < MIN_PROGRAMS:
+
         raise RuntimeError(
             f"Program sayısı yetersiz: {program_count}. "
             f"Minimum: {MIN_PROGRAMS}. XML korunuyor."
@@ -742,6 +775,7 @@ def validate_data(channels, program_count):
             )
 
     if len(days) < 6:
+
         raise RuntimeError(
             f"Yalnızca {len(days)} farklı yayın günü bulundu. "
             "XML korunuyor."
@@ -774,9 +808,10 @@ def save_xml(tree, output_file):
             xml_declaration=True
         )
 
-        # Oluşturulan XML tekrar okunarak kontrol edilir.
+        # XML tekrar okunarak kontrol edilir.
         ET.parse(temp_path)
 
+        # Doğrulama başarılıysa eski dosyanın yerine geçer.
         os.replace(
             temp_path,
             output_file
@@ -798,12 +833,17 @@ def main():
 
     print("=" * 64)
     print("TIVIBU 7 GÜNLÜK EPG")
-    print("Kanal kimliği ve program bağlantısı üzerinden eşleştirme")
+    print("Tarih bağlantıları: channeldatebegin/channeldateend")
     print("Kaynak:", LIVE_URL)
-    print("Başlangıç:", datetime.now().strftime("%d.%m.%Y"))
-    print("=" * 64)
 
     base_date = datetime.now().date()
+
+    print(
+        "Başlangıç:",
+        base_date.strftime("%d.%m.%Y")
+    )
+
+    print("=" * 64)
 
     with sync_playwright() as playwright:
 
@@ -827,9 +867,14 @@ def main():
 
         page = context.new_page()
 
-        page.set_default_timeout(TIMEOUT)
+        page.set_default_timeout(
+            TIMEOUT
+        )
 
-        print("[1/4] Tivibu sayfası açılıyor...", flush=True)
+        print(
+            "[1/4] Tivibu sayfası açılıyor...",
+            flush=True
+        )
 
         page.goto(
             LIVE_URL,
@@ -838,23 +883,34 @@ def main():
         )
 
         try:
+
             page.wait_for_load_state(
                 "networkidle",
                 timeout=15000
             )
+
         except PlaywrightTimeoutError:
             pass
 
         page.wait_for_timeout(3000)
 
-        print("[2/4] Tarih seçenekleri okunuyor...", flush=True)
+        print(
+            "[2/4] Tarih seçenekleri okunuyor...",
+            flush=True
+        )
 
-        date_labels = build_seven_date_labels(page)
+        date_links = page.locator(
+            "a[channeldatebegin][channeldateend]"
+        )
 
         print(
-            "Bulunan tarih seçeneği:",
-            len(get_date_labels(page)),
+            "Bulunan tarih bağlantısı:",
+            date_links.count(),
             flush=True
+        )
+
+        date_labels = build_seven_date_labels(
+            base_date
         )
 
         print(
@@ -876,14 +932,19 @@ def main():
 
         browser.close()
 
-    print("[4/4] XML doğrulanıyor ve kaydediliyor...", flush=True)
+    print(
+        "[4/4] XML doğrulanıyor ve kaydediliyor...",
+        flush=True
+    )
 
     validate_data(
         channels,
         program_count
     )
 
-    tree = build_xml(channels)
+    tree = build_xml(
+        channels
+    )
 
     save_xml(
         tree,
@@ -902,6 +963,7 @@ def main():
 if __name__ == "__main__":
 
     try:
+
         main()
 
     except Exception as error:
