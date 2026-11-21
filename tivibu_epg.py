@@ -2,8 +2,8 @@
 import re
 import html
 import time
-import unicodedata
 import os
+import unicodedata
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from xml.etree import ElementTree as ET
@@ -37,8 +37,6 @@ BAD_CHANNELS = {
     "BENİM KANALIM",
     "FAVORİ KANALLARIM",
     "TİVİBU TANITIM SAYFASI",
-    "TİVİBU CANLI TV, KANAL VE PROGRAMLAR",
-    "TİVİBU NEDİR?",
 }
 
 TIME_RE = re.compile(
@@ -56,12 +54,13 @@ CATEGORY_RE = re.compile(
 
 
 # ============================================================
-# ESKİ ÇALIŞAN KANAL-PROGRAM EŞLEŞTİRME MANTIĞI
+# KANAL - PROGRAM EŞLEŞTİRME
 #
-# Program bağlantısından başlanır.
-# Üst kapsayıcılar taranır.
-# En yakın tek /kanallar/ bağlantısı bulunur.
-# Kanal adresi üzerinden programlar gruplandırılır.
+# 1. Program bağlantıları bulunur.
+# 2. Kanal bağlantıları ayrı listelenir.
+# 3. Her program için DOM ağacındaki en yakın kanal bağlantısı
+#    hesaplanır.
+# 4. Programlar kanal adresine göre gruplanır.
 # ============================================================
 
 EXTRACT_JS = r"""
@@ -72,163 +71,201 @@ EXTRACT_JS = r"""
     const norm = value =>
         (value || "").replace(/\s+/g, " ").trim();
 
-    const anchors = [
-        ...document.querySelectorAll("a")
+    const allAnchors = [
+        ...document.querySelectorAll("a[href]")
     ];
 
-    const groups = new Map();
-    const unmapped = [];
+    const channelLinks = [];
+    const programAnchors = [];
 
-    const diagnostics = {
-        totalAnchors: anchors.length,
-        programAnchors: 0,
-        mappedPrograms: 0,
-        unmappedPrograms: 0,
-        mappedChannels: 0,
-        samples: []
-    };
+    for (let index = 0; index < allAnchors.length; index++) {
+        const a = allAnchors[index];
 
-    function getChannelLinks(container) {
-        const links = [
-            ...container.querySelectorAll("a[href]")
-        ];
+        let url;
 
-        const unique = new Map();
-
-        for (const link of links) {
-            try {
-                const url = new URL(
-                    link.href,
-                    location.href
-                );
-
-                if (
-                    !url.pathname
-                        .toLowerCase()
-                        .includes("/kanallar/")
-                ) {
-                    continue;
-                }
-
-                const href =
-                    url.origin +
-                    url.pathname.replace(/\/+$/, "");
-
-                let name = norm(
-                    link.innerText ||
-                    link.textContent
-                );
-
-                if (!name) {
-                    const image = link.querySelector(
-                        "img[alt]"
-                    );
-
-                    if (image) {
-                        name = norm(
-                            image.getAttribute("alt")
-                        );
-                    }
-                }
-
-                name = name
-                    .replace(/^Kanal\s*:\s*/i, "")
-                    .trim();
-
-                if (href && name) {
-                    unique.set(
-                        href,
-                        {
-                            href,
-                            name
-                        }
-                    );
-                }
-
-            } catch (_) {
-            }
-        }
-
-        return unique;
-    }
-
-    for (const programAnchor of anchors) {
-        const programText = norm(
-            programAnchor.innerText ||
-            programAnchor.textContent
-        );
-
-        if (
-            !programAnchor.href ||
-            !timeRe.test(programText)
-        ) {
+        try {
+            url = new URL(a.href, location.href);
+        } catch (_) {
             continue;
         }
 
-        diagnostics.programAnchors++;
-
-        let node = programAnchor;
-        let channelHref = "";
-        let channelName = "";
-        let chosenDepth = -1;
-
-        // ÖNEMLİ:
-        // Program bağlantısından yukarı doğru çıkılır.
-        // En yakın tek kanal bağlantısı bulunan kapsayıcı seçilir.
-        for (
-            let depth = 0;
-            depth < 35 && node;
-            depth++, node = node.parentElement
+        if (
+            url.pathname.toLowerCase().includes("/kanallar/")
         ) {
-            const unique = getChannelLinks(node);
+            let name = norm(
+                a.innerText || a.textContent
+            );
 
-            if (unique.size === 1) {
-                const match = [
-                    ...unique.values()
-                ][0];
+            if (!name) {
+                const img = a.querySelector("img[alt]");
 
-                channelHref = match.href;
-                channelName = match.name;
-                chosenDepth = depth;
+                if (img) {
+                    name = norm(
+                        img.getAttribute("alt")
+                    );
+                }
+            }
 
-                break;
+            name = name
+                .replace(/^Kanal\s*:\s*/i, "")
+                .trim();
+
+            if (name) {
+                channelLinks.push({
+                    element: a,
+                    href: url.origin +
+                        url.pathname.replace(/\/+$/, ""),
+                    name,
+                    index
+                });
             }
         }
 
-        if (!channelHref || !channelName) {
-            diagnostics.unmappedPrograms++;
+        const text = norm(
+            a.innerText || a.textContent
+        );
+
+        if (timeRe.test(text)) {
+            programAnchors.push({
+                element: a,
+                text,
+                index
+            });
+        }
+    }
+
+    // DOM ağacındaki iki eleman arasındaki mesafe.
+    function domDistance(a, b) {
+        const ancestors = new Map();
+
+        let node = a;
+        let depth = 0;
+
+        while (node) {
+            ancestors.set(node, depth++);
+            node = node.parentElement;
+        }
+
+        node = b;
+        depth = 0;
+
+        while (node) {
+            if (ancestors.has(node)) {
+                return ancestors.get(node) + depth;
+            }
+
+            depth++;
+            node = node.parentElement;
+        }
+
+        return 999999;
+    }
+
+    const groups = new Map();
+
+    const diagnostics = {
+        totalAnchors: allAnchors.length,
+        channelAnchors: channelLinks.length,
+        programAnchors: programAnchors.length,
+        mappedPrograms: 0,
+        unmappedPrograms: 0,
+        mappedChannels: 0,
+        distanceCounts: {},
+        samples: []
+    };
+
+    // Aynı adresin tekrar eden bağlantılarını temizle.
+    const uniqueChannels = new Map();
+
+    for (const channel of channelLinks) {
+        if (!uniqueChannels.has(channel.href)) {
+            uniqueChannels.set(
+                channel.href,
+                channel
+            );
+        }
+    }
+
+    const channels = [
+        ...uniqueChannels.values()
+    ];
+
+    for (const program of programAnchors) {
+        let best = null;
+        let bestDistance = Infinity;
+        let bestIndexDistance = Infinity;
+
+        for (const channel of channels) {
+            const distance = domDistance(
+                program.element,
+                channel.element
+            );
+
+            const indexDistance = Math.abs(
+                program.index - channel.index
+            );
 
             if (
-                diagnostics.samples.length < 10
+                distance < bestDistance ||
+                (
+                    distance === bestDistance &&
+                    indexDistance < bestIndexDistance
+                )
             ) {
-                unmapped.push({
-                    program: programText,
-                    href: programAnchor.href
+                best = channel;
+                bestDistance = distance;
+                bestIndexDistance = indexDistance;
+            }
+        }
+
+        if (!best || bestDistance >= 999999) {
+            diagnostics.unmappedPrograms++;
+
+            if (diagnostics.samples.length < 10) {
+                diagnostics.samples.push({
+                    program: program.text,
+                    reason: "Yakın kanal bağlantısı bulunamadı"
                 });
             }
 
             continue;
         }
 
-        if (!groups.has(channelHref)) {
+        // Çok uzak eşleşmeleri kabul etme.
+        if (bestDistance > 30) {
+            diagnostics.unmappedPrograms++;
+
+            if (diagnostics.samples.length < 10) {
+                diagnostics.samples.push({
+                    program: program.text,
+                    reason: "Kanal bağlantısı DOM olarak çok uzakta",
+                    distance: bestDistance
+                });
+            }
+
+            continue;
+        }
+
+        diagnostics.distanceCounts[bestDistance] =
+            (diagnostics.distanceCounts[bestDistance] || 0) + 1;
+
+        if (!groups.has(best.href)) {
             groups.set(
-                channelHref,
+                best.href,
                 {
-                    name: channelName,
-                    href: channelHref,
+                    name: best.name,
+                    href: best.href,
                     items: [],
-                    seen: new Set(),
-                    depth: chosenDepth
+                    seen: new Set()
                 }
             );
         }
 
-        const group = groups.get(channelHref);
+        const group = groups.get(best.href);
 
-        if (!group.seen.has(programText)) {
-            group.seen.add(programText);
-            group.items.push(programText);
-
+        if (!group.seen.has(program.text)) {
+            group.seen.add(program.text);
+            group.items.push(program.text);
             diagnostics.mappedPrograms++;
         }
     }
@@ -240,14 +277,12 @@ EXTRACT_JS = r"""
             rows.push({
                 name: group.name,
                 href: group.href,
-                items: group.items,
-                depth: group.depth
+                items: group.items
             });
         }
     }
 
     diagnostics.mappedChannels = rows.length;
-    diagnostics.samples = unmapped;
 
     return {
         rows,
@@ -271,14 +306,6 @@ def clean_text(value):
         " ",
         value
     ).strip()
-
-
-def normalize_name(value):
-    return clean_text(value).upper()
-
-
-def is_bad_channel(name):
-    return normalize_name(name) in BAD_CHANNELS
 
 
 def slugify(value):
@@ -311,9 +338,8 @@ def slugify(value):
     )
 
     value = "".join(
-        char
-        for char in value
-        if not unicodedata.combining(char)
+        c for c in value
+        if not unicodedata.combining(c)
     ).lower()
 
     value = re.sub(
@@ -335,12 +361,15 @@ def unique_id(name, used):
         suffix += 1
 
     used.add(result)
-
     return result
 
 
+def is_bad_channel(name):
+    return clean_text(name).upper() in BAD_CHANNELS
+
+
 # ============================================================
-# PROGRAM SATIRI PARSE
+# PROGRAM PARSE
 # ============================================================
 
 def parse_program_line(line):
@@ -512,7 +541,7 @@ def build_target_dates(records, today):
 
 
 # ============================================================
-# SAYFA AÇMA VE TARİH SEÇME
+# SAYFA VE TARİH SEÇİMİ
 # ============================================================
 
 def open_live_page(page):
@@ -577,7 +606,7 @@ def select_date_by_attributes(page, record):
 
 
 # ============================================================
-# PROGRAM SAATLERİNİ TARİHE DÖNÜŞTÜRME
+# SAATLERİ TARİHE DÖNÜŞTÜRME
 # ============================================================
 
 def assign_times(items, selected_day):
@@ -717,7 +746,6 @@ def collect_seven_days(page, today, date_records):
             flush=True
         )
 
-        # Her gün sayfa baştan açılır.
         open_live_page(page)
 
         if offset > 0:
@@ -751,13 +779,18 @@ def collect_seven_days(page, today, date_records):
         )
 
         print(
+            "  Kanal bağlantısı:",
+            diagnostics.get("channelAnchors", 0)
+        )
+
+        print(
             "  Program bağlantısı:",
             diagnostics.get("programAnchors", 0)
         )
 
         print(
-            "  Program grubu:",
-            len(rows)
+            "  Eşleşen kanal:",
+            diagnostics.get("mappedChannels", 0)
         )
 
         print(
@@ -770,16 +803,13 @@ def collect_seven_days(page, today, date_records):
             diagnostics.get("unmappedPrograms", 0)
         )
 
-        if not rows:
-            for sample in diagnostics.get(
-                "samples",
-                []
-            )[:5]:
-                print(
-                    "  Eşleşmeyen örnek:",
-                    sample.get("program", "")
-                )
+        if diagnostics.get("distanceCounts"):
+            print(
+                "  DOM eşleşme mesafeleri:",
+                diagnostics["distanceCounts"]
+            )
 
+        if not rows:
             raise RuntimeError(
                 f"{label} için kanal/program eşleşmesi bulunamadı. "
                 "Mevcut XML korunuyor."
@@ -845,8 +875,19 @@ def collect_seven_days(page, today, date_records):
             offset == 0
             and len(rows) < MIN_CHANNELS
         ):
+            for sample in diagnostics.get(
+                "samples",
+                []
+            )[:5]:
+                print(
+                    "  Eşleşmeyen örnek:",
+                    sample.get("program", ""),
+                    "|",
+                    sample.get("reason", "")
+                )
+
             raise RuntimeError(
-                f"İlk gün yalnızca {len(rows)} program grubu eşleşti. "
+                f"İlk gün yalnızca {len(rows)} kanal eşleşti. "
                 f"En az {MIN_CHANNELS} bekleniyordu. "
                 "Mevcut XML korunuyor."
             )
@@ -990,7 +1031,7 @@ def validate_data(channel_names, programs):
     for item in programs:
         if item["channel_name"] not in channel_set:
             raise RuntimeError(
-                "Kanal eşleşmesi geçersiz. "
+                "Geçersiz kanal eşleşmesi. "
                 "Mevcut XML korunuyor."
             )
 
@@ -1043,7 +1084,7 @@ def main():
 
     print("=" * 68)
     print("TIVIBU 7 GÜNLÜK EPG")
-    print("Program bağlantısından kanal bağlantısına eşleştirme")
+    print("DOM yakınlığına göre kanal-program eşleştirme")
     print("Her gün ayrı sayfada, tarih değerleriyle seçim")
     print(f"Kaynak: {LIVE_TV_URL}")
     print(
