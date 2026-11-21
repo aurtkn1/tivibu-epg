@@ -1,15 +1,13 @@
 # tivibu_epg.py
+
 import re
-import html
-import time
 import os
-import unicodedata
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from urllib.parse import urljoin
 from xml.etree import ElementTree as ET
 
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 
 
 BASE_URL = "https://www.tivibu.com.tr"
@@ -18,24 +16,10 @@ OUTPUT_FILE = "epg.xml"
 TIMEZONE = ZoneInfo("Europe/Istanbul")
 DAYS = 7
 
-CATEGORIES = [
-    ("Tüm Kanallar", "/canli-tv"),
-    ("Ulusal", "/canli-tv/ulusal"),
-    ("Haber", "/canli-tv/haber"),
-    ("Spor", "/canli-tv/spor"),
-    ("Sinema", "/canli-tv/sinema"),
-    ("Dizi", "/canli-tv/dizi"),
-    ("Çocuk", "/canli-tv/cocuk"),
-    ("Belgesel", "/canli-tv/belgesel"),
-    ("Yaşam-Stil", "/canli-tv/yasam-stil"),
-    ("Müzik", "/canli-tv/muzik"),
-    ("Global", "/canli-tv/global"),
-    ("Diğer", "/canli-tv/diger"),
-]
 
 EXTRACT_JS = r"""
 () => {
-    const clean = (value) =>
+    const clean = value =>
         (value || "").replace(/\s+/g, " ").trim();
 
     const channels = [];
@@ -52,9 +36,8 @@ EXTRACT_JS = r"""
         if (!id || !name) return;
 
         if (!channelMap.has(id)) {
-            const item = { id, name };
-            channelMap.set(id, item);
-            channels.push(item);
+            channelMap.set(id, true);
+            channels.push({id, name});
         }
     });
 
@@ -62,19 +45,14 @@ EXTRACT_JS = r"""
     const seen = new Set();
 
     document.querySelectorAll('a[href*="/rv?"]').forEach(link => {
-        const titleElement = link.querySelector(".programTitle");
-        const startElement = link.querySelector(".startTime");
-        const finishElement = link.querySelector(".finishTime");
-
-        if (!titleElement || !startElement || !finishElement) return;
-
-        const title = clean(titleElement.innerText);
-        const start = clean(startElement.innerText);
-        const finish = clean(finishElement.innerText);
+        const title = clean(link.querySelector(".programTitle")?.innerText);
+        const start = clean(link.querySelector(".startTime")?.innerText);
+        const finish = clean(link.querySelector(".finishTime")?.innerText);
         const type = clean(link.querySelector(".programType .type")?.innerText);
 
         const href = link.getAttribute("href") || "";
         const match = href.match(/ch\d+/i);
+
         if (!match || !title || !start || !finish) return;
 
         const channelId = match[0];
@@ -96,8 +74,7 @@ EXTRACT_JS = r"""
         channelCards: document.querySelectorAll(".fullLink[channelcode]").length,
         channels,
         programLinks: document.querySelectorAll('a[href*="/rv?"]').length,
-        programs,
-        pageTitle: document.title
+        programs
     };
 }
 """
@@ -108,8 +85,72 @@ def log(message):
 
 
 def normalize(value):
-    value = unicodedata.normalize("NFKC", str(value or ""))
-    return re.sub(r"\s+", " ", value).strip()
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def close_overlays(page):
+    try:
+        page.evaluate("""
+        () => {
+            const selectors = [
+                ".ins-preview-wrapper",
+                "#ins-frameless-overlay",
+                '[id^="ins-frame"]',
+                '[class*="ins-preview-wrapper"]',
+                '[class*="ins-webpush"]'
+            ];
+
+            selectors.forEach(selector => {
+                document.querySelectorAll(selector).forEach(el => el.remove());
+            });
+
+            document.body.style.overflow = "auto";
+            document.documentElement.style.overflow = "auto";
+        }
+        """)
+    except Exception:
+        pass
+
+
+def install_popup_blocker(context):
+    context.add_init_script("""
+    (() => {
+        const removeInsider = () => {
+            [
+                ".ins-preview-wrapper",
+                "#ins-frameless-overlay",
+                '[id^="ins-frame"]',
+                '[class*="ins-preview-wrapper"]'
+            ].forEach(selector => {
+                document.querySelectorAll(selector).forEach(el => el.remove());
+            });
+        };
+
+        const observer = new MutationObserver(removeInsider);
+
+        const start = () => {
+            if (!document.documentElement) return;
+            observer.observe(document.documentElement, {
+                childList: true,
+                subtree: true
+            });
+            removeInsider();
+        };
+
+        if (document.documentElement) start();
+        else document.addEventListener("DOMContentLoaded", start);
+    })();
+    """)
+
+
+def wait_page(page, milliseconds=1500):
+    try:
+        page.wait_for_load_state("domcontentloaded", timeout=5000)
+    except Exception:
+        pass
+
+    page.wait_for_timeout(milliseconds)
+    close_overlays(page)
 
 
 def parse_time(value):
@@ -126,210 +167,8 @@ def parse_time(value):
     return hour, minute
 
 
-def close_overlays(page):
-    """
-    Tivibu sayfasındaki Insider bildirim/reklam pencerelerini kapatır.
-    Kapatma düğmesi bulunamazsa engelleyici katmanları etkisizleştirir.
-    """
-
-    try:
-        page.evaluate("""
-        () => {
-            const selectors = [
-                ".ins-preview-wrapper",
-                "#ins-frameless-overlay",
-                '[id^="ins-frame"]',
-                '[class*="ins-preview-wrapper"]',
-                '[class*="ins-webpush"]'
-            ];
-
-            selectors.forEach(selector => {
-                document.querySelectorAll(selector).forEach(element => {
-                    element.remove();
-                });
-            });
-
-            document.querySelectorAll("body *").forEach(element => {
-                const style = window.getComputedStyle(element);
-
-                if (
-                    style.position === "fixed" &&
-                    Number(style.zIndex) > 1000
-                ) {
-                    const text = (
-                        element.innerText ||
-                        element.getAttribute("aria-label") ||
-                        ""
-                    ).toLowerCase();
-
-                    if (
-                        text.includes("bildirim") ||
-                        text.includes("notification") ||
-                        element.className?.toString().toLowerCase().includes("ins-")
-                    ) {
-                        element.remove();
-                    }
-                }
-            });
-
-            document.body.style.overflow = "auto";
-            document.documentElement.style.overflow = "auto";
-        }
-        """)
-    except Exception:
-        pass
-
-
-def install_popup_blocker(context):
-    """
-    Insider katmanlarının sayfaya yeniden eklenmesini önlemeye yardımcı olur.
-    """
-
-    context.add_init_script("""
-    (() => {
-        const removeInsider = () => {
-            const selectors = [
-                ".ins-preview-wrapper",
-                "#ins-frameless-overlay",
-                '[id^="ins-frame"]',
-                '[class*="ins-preview-wrapper"]'
-            ];
-
-            selectors.forEach(selector => {
-                document.querySelectorAll(selector).forEach(element => {
-                    element.remove();
-                });
-            });
-        };
-
-        const observer = new MutationObserver(removeInsider);
-
-        const startObserver = () => {
-            if (document.documentElement) {
-                observer.observe(document.documentElement, {
-                    childList: true,
-                    subtree: true
-                });
-                removeInsider();
-            }
-        };
-
-        if (document.documentElement) {
-            startObserver();
-        } else {
-            document.addEventListener("DOMContentLoaded", startObserver);
-        }
-    })();
-    """)
-
-
-def safe_click(page, locator, timeout=10000):
-    """
-    Önce normal tıklamayı dener.
-    Üst katman tıklamayı engellerse DOM click kullanır.
-    """
-
-    close_overlays(page)
-
-    try:
-        locator.scroll_into_view_if_needed(timeout=timeout)
-        locator.click(timeout=3000)
-        return True
-    except Exception:
-        pass
-
-    close_overlays(page)
-
-    try:
-        locator.evaluate("(element) => element.click()")
-        return True
-    except Exception:
-        return False
-
-
-def wait_page(page, milliseconds=1200):
-    try:
-        page.wait_for_load_state("domcontentloaded", timeout=5000)
-    except Exception:
-        pass
-
-    page.wait_for_timeout(milliseconds)
-    close_overlays(page)
-
-
-def get_visible_date_links(page):
-    try:
-        return page.locator(
-            "a[channeldatebegin][channeldateend]:visible"
-        ).all()
-    except Exception:
-        return []
-
-
-def select_date(page, target_date):
-    date_text = target_date.strftime("%d.%m.%Y")
-
-    close_overlays(page)
-
-    links = page.locator(
-        "a[channeldatebegin][channeldateend]:visible"
-    )
-
-    try:
-        count = links.count()
-    except Exception:
-        count = 0
-
-    for index in range(count):
-        link = links.nth(index)
-
-        try:
-            begin = link.get_attribute("channeldatebegin") or ""
-            end = link.get_attribute("channeldateend") or ""
-            label = normalize(link.inner_text())
-
-            date_value = begin or end
-
-            if target_date.strftime("%Y-%m-%d") in date_value:
-                if "active" in (link.get_attribute("class") or "").lower():
-                    return True
-
-                safe_click(page, link)
-                wait_page(page, 1800)
-                return True
-
-            if date_text in label:
-                if "active" in (link.get_attribute("class") or "").lower():
-                    return True
-
-                safe_click(page, link)
-                wait_page(page, 1800)
-                return True
-
-        except Exception:
-            continue
-
-    return False
-
-
-def extract_page(page):
-    close_overlays(page)
-
-    try:
-        return page.evaluate(EXTRACT_JS)
-    except Exception as error:
-        log(f"Sayfa verisi okunamadı: {error}")
-        return {
-            "channelCards": 0,
-            "channels": [],
-            "programLinks": 0,
-            "programs": [],
-            "pageTitle": ""
-        }
-
-
-def make_datetime(day, time_value):
-    parsed = parse_time(time_value)
+def make_datetime(day, value):
+    parsed = parse_time(value)
     if not parsed:
         return None
 
@@ -345,41 +184,155 @@ def make_datetime(day, time_value):
     )
 
 
-def collect_category(page, category_name, category_path, channels, programs):
-    url = urljoin(BASE_URL, category_path)
+def select_date(page, target_date):
+    """
+    Tarih bağlantılarının farklı HTML biçimlerini kontrol eder.
+    Önce tarih değerlerini arar, ardından görünen tarih metinlerini dener.
+    """
 
+    target_iso = target_date.strftime("%Y-%m-%d")
+    target_dot = target_date.strftime("%d.%m.%Y")
+    target_slash = target_date.strftime("%d/%m/%Y")
+
+    close_overlays(page)
+
+    # Sayfadaki tarih bağlantılarının mevcut HTML bilgilerini al.
+    try:
+        date_elements = page.locator(
+            "a[channeldatebegin], a[channeldateend], "
+            "[channeldatebegin], [channeldateend]"
+        )
+
+        count = date_elements.count()
+
+        for index in range(count):
+            element = date_elements.nth(index)
+
+            try:
+                begin = element.get_attribute("channeldatebegin") or ""
+                end = element.get_attribute("channeldateend") or ""
+                label = normalize(element.inner_text())
+                value = begin + " " + end
+
+                if (
+                    target_iso in value or
+                    target_dot in value or
+                    target_slash in value or
+                    target_dot in label or
+                    target_slash in label
+                ):
+                    if "active" in (element.get_attribute("class") or "").lower():
+                        return True
+
+                    try:
+                        element.evaluate("(el) => el.click()")
+                        wait_page(page, 1800)
+                        return True
+                    except Exception:
+                        continue
+
+            except Exception:
+                continue
+
+    except Exception:
+        pass
+
+    # Alternatif: tarih butonları veya bağlantılarının metninden seç.
+    try:
+        candidates = page.locator("a, button, [role='button']")
+
+        count = candidates.count()
+
+        for index in range(count):
+            element = candidates.nth(index)
+
+            try:
+                if not element.is_visible():
+                    continue
+
+                label = normalize(element.inner_text())
+
+                if target_dot in label or target_slash in label:
+                    element.evaluate("(el) => el.click()")
+                    wait_page(page, 1800)
+                    return True
+
+            except Exception:
+                continue
+
+    except Exception:
+        pass
+
+    # Tarih seçicinin HTML yapısını logla.
+    try:
+        diagnostic = page.evaluate("""
+        () => Array.from(document.querySelectorAll(
+            '[channeldatebegin], [channeldateend], a, button'
+        )).slice(0, 50).map(el => ({
+            tag: el.tagName,
+            text: (el.innerText || '').trim().slice(0, 80),
+            begin: el.getAttribute('channeldatebegin'),
+            end: el.getAttribute('channeldateend'),
+            cls: el.className?.toString().slice(0, 100)
+        }))
+        """)
+        log(f"Tarih seçici bulunamadı. Sayfa elemanları: {diagnostic}")
+    except Exception:
+        pass
+
+    return False
+
+
+def extract_page(page):
+    close_overlays(page)
+
+    try:
+        return page.evaluate(EXTRACT_JS)
+    except Exception as error:
+        log(f"Veri okuma hatası: {error}")
+        return {
+            "channelCards": 0,
+            "channels": [],
+            "programLinks": 0,
+            "programs": []
+        }
+
+
+def collect_day(page, day, channels, all_programs):
     log("")
-    log("=" * 65)
-    log(f"KATEGORİ: {category_name}")
-    log(f"Kaynak: {url}")
+    log("-" * 65)
+    log(f"TARİH: {day.strftime('%d.%m.%Y')}")
+
+    close_overlays(page)
 
     try:
         page.goto(
-            url,
+            SOURCE_URL,
             wait_until="domcontentloaded",
             timeout=60000
         )
     except Exception as error:
-        log(f"Sayfa açma hatası: {error}")
+        log(f"Sayfa açılamadı: {error}")
         return
 
     wait_page(page, 2500)
 
+    # Kanalların ve sayfa içeriğinin yüklenmesini bekle.
     try:
         page.locator(".fullLink[channelcode]").first.wait_for(
             state="attached",
-            timeout=15000
+            timeout=20000
         )
     except Exception:
         pass
 
     close_overlays(page)
 
-    # Sayfadaki kanalların yüklenmesi için aşağı kaydır.
+    # Sayfa aşağı kaydırılarak tüm kanal kartları yüklenir.
     previous_count = -1
     stable_count = 0
 
-    for _ in range(15):
+    for _ in range(20):
         close_overlays(page)
 
         try:
@@ -394,7 +347,7 @@ def collect_category(page, category_name, category_path, channels, programs):
         else:
             stable_count = 0
 
-        if stable_count >= 2:
+        if stable_count >= 3:
             break
 
         previous_count = current_count
@@ -407,12 +360,12 @@ def collect_category(page, category_name, category_path, channels, programs):
             pass
 
         page.wait_for_timeout(500)
-        close_overlays(page)
 
+    # Kanal bilgilerini al.
     data = extract_page(page)
 
     log(f"Kanal kartı: {data['channelCards']}")
-    log(f"Kanal bağlantısı: {data['programLinks']}")
+    log(f"Program bağlantısı: {data['programLinks']}")
 
     for channel in data["channels"]:
         channel_id = normalize(channel["id"])
@@ -423,72 +376,29 @@ def collect_category(page, category_name, category_path, channels, programs):
                 channels[channel_id] = channel_name
                 log(f"Yeni kanal: {channel_name} ({channel_id})")
 
+    # Tarihi seç.
+    if not select_date(page, day):
+        log("Tarih seçilemedi; bu günün programları atlandı.")
+        return
+
+    # Tarih değiştikten sonra programları tekrar oku.
+    data = extract_page(page)
+
+    added = 0
+
     for program in data["programs"]:
         channel_id = normalize(program["channelId"])
 
         if channel_id not in channels:
             continue
 
-        programs.append(program)
+        item = dict(program)
+        item["date"] = day
+        all_programs.append(item)
+        added += 1
 
-    log(f"Bu kategoride okunan program: {len(data['programs'])}")
-
-
-def collect_day(page, day, channels, all_programs):
-    log("")
-    log("-" * 65)
-    log(f"TARİH: {day.strftime('%d.%m.%Y')}")
-
-    for category_name, category_path in CATEGORIES:
-        url = urljoin(BASE_URL, category_path)
-
-        try:
-            page.goto(
-                url,
-                wait_until="domcontentloaded",
-                timeout=60000
-            )
-        except Exception as error:
-            log(f"{category_name}: Sayfa açılamadı: {error}")
-            continue
-
-        wait_page(page, 1500)
-        close_overlays(page)
-
-        selected = select_date(page, day)
-
-        if not selected:
-            log(f"{category_name}: Tarih seçilemedi.")
-            continue
-
-        data = extract_page(page)
-
-        for channel in data["channels"]:
-            channel_id = normalize(channel["id"])
-            channel_name = normalize(channel["name"])
-
-            if channel_id and channel_name:
-                channels.setdefault(channel_id, channel_name)
-
-        added = 0
-
-        for program in data["programs"]:
-            channel_id = normalize(program["channelId"])
-
-            if channel_id not in channels:
-                continue
-
-            item = dict(program)
-            item["date"] = day
-            all_programs.append(item)
-            added += 1
-
-        log(
-            f"{category_name}: "
-            f"{len(data['channels'])} kanal kartı, "
-            f"{len(data['programs'])} program, "
-            f"{added} kayıt eklendi."
-        )
+    log(f"Okunan program: {len(data['programs'])}")
+    log(f"Eklenen program: {added}")
 
 
 def build_xml(channels, programs):
@@ -510,13 +420,11 @@ def build_xml(channels, programs):
         display_name.text = channel_name
 
     seen = set()
-    valid_programs = 0
+    valid_count = 0
 
     for program in programs:
         channel_id = normalize(program.get("channelId"))
         title = normalize(program.get("title"))
-        start_text = normalize(program.get("start"))
-        finish_text = normalize(program.get("finish"))
         day = program.get("date")
 
         if not channel_id or channel_id not in channels:
@@ -525,8 +433,8 @@ def build_xml(channels, programs):
         if not title or not day:
             continue
 
-        start_dt = make_datetime(day, start_text)
-        finish_dt = make_datetime(day, finish_text)
+        start_dt = make_datetime(day, program.get("start"))
+        finish_dt = make_datetime(day, program.get("finish"))
 
         if not start_dt or not finish_dt:
             continue
@@ -537,19 +445,14 @@ def build_xml(channels, programs):
         start_xml = start_dt.strftime("%Y%m%d%H%M%S %z")
         stop_xml = finish_dt.strftime("%Y%m%d%H%M%S %z")
 
-        key = (
-            channel_id,
-            start_xml,
-            stop_xml,
-            title
-        )
+        key = (channel_id, start_xml, stop_xml, title)
 
         if key in seen:
             continue
 
         seen.add(key)
 
-        programme = ET.SubElement(
+        element = ET.SubElement(
             tv,
             "programme",
             {
@@ -560,7 +463,7 @@ def build_xml(channels, programs):
         )
 
         title_element = ET.SubElement(
-            programme,
+            element,
             "title",
             {"lang": "tr"}
         )
@@ -570,19 +473,15 @@ def build_xml(channels, programs):
 
         if program_type:
             category = ET.SubElement(
-                programme,
+                element,
                 "category",
                 {"lang": "tr"}
             )
             category.text = program_type
 
-        valid_programs += 1
+        valid_count += 1
 
-    log("")
-    log(f"XML kanal sayısı: {len(channels)}")
-    log(f"XML program sayısı: {valid_programs}")
-
-    return tv, valid_programs
+    return tv, valid_count
 
 
 def save_xml(root):
@@ -601,7 +500,6 @@ def save_xml(root):
         xml_declaration=True
     )
 
-    # Dosya tamamlanmadan mevcut XML'in üzerine yazma.
     ET.parse(temporary_file)
     os.replace(temporary_file, OUTPUT_FILE)
 
@@ -611,10 +509,10 @@ def save_xml(root):
 def main():
     log("=" * 65)
     log("TIVIBU 7 GÜNLÜK EPG")
+    log("Yalnızca TÜM KANALLAR kategorisi kullanılacak.")
     log("Kanal ID: .fullLink[channelcode]")
     log("Kanal adı: .channelsTitle")
     log("Program: .programTitle / .startTime / .finishTime")
-    log("Insider reklam engelleyici düzeltmesi etkin.")
     log("=" * 65)
 
     channels = {}
@@ -647,13 +545,11 @@ def main():
         page = context.new_page()
         page.set_default_timeout(15000)
 
-        page.on(
-            "dialog",
-            lambda dialog: dialog.dismiss()
-        )
+        page.on("dialog", lambda dialog: dialog.dismiss())
 
         for offset in range(DAYS):
             day = today + timedelta(days=offset)
+
             collect_day(
                 page,
                 day,
@@ -668,6 +564,11 @@ def main():
         programs
     )
 
+    log("")
+    log("=" * 65)
+    log(f"Toplam kanal: {len(channels)}")
+    log(f"Toplam program: {program_count}")
+
     if len(channels) < 30:
         raise RuntimeError(
             f"Kanal sayısı yetersiz: {len(channels)}"
@@ -680,13 +581,7 @@ def main():
 
     save_xml(root)
 
-    log("")
-    log("=" * 65)
     log("İŞLEM TAMAMLANDI")
-    log(f"Toplam kanal: {len(channels)}")
-    log(f"Toplam program: {program_count}")
-    log(f"Gün sayısı: {DAYS}")
-    log("=" * 65)
 
 
 if __name__ == "__main__":
