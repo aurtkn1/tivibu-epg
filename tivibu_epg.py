@@ -1,9 +1,9 @@
-# tivibu_epg.py
+
 import re
 import html
 import time
-import unicodedata
 import os
+import unicodedata
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from urllib.parse import urljoin
@@ -16,9 +16,10 @@ BASE_URL = "https://www.tivibu.com.tr"
 LIVE_TV_URL = f"{BASE_URL}/canli-tv"
 OUTPUT_FILE = "epg.xml"
 ISTANBUL = ZoneInfo("Europe/Istanbul")
+
 DAYS = 7
 PAGE_TIMEOUT = 60000
-DATE_WAIT_MS = 1100
+DATE_WAIT_MS = 1200
 MIN_CHANNELS = 10
 MIN_PROGRAMS = 100
 
@@ -41,6 +42,7 @@ BAD_CHANNELS = {
     "BENİM KANALIM",
     "FAVORİ KANALLARIM",
     "TİVİBU TANITIM SAYFASI",
+    "FAVORİ KANALLARIMI",
 }
 
 TIME_RE = re.compile(
@@ -49,105 +51,228 @@ TIME_RE = re.compile(
 )
 
 CATEGORY_RE = re.compile(
-    r"\s+(?:Yaşam|Film|Dizi|Spor|Haber|Çocuk|Müzik|Belgesel|Sinema|Ulusal|Global|Diğer|Aktüalite|Spor Programı)\s*[-–]?\s*$",
+    r"\s+(?:Yaşam|Film|Dizi|Spor|Haber|Çocuk|Müzik|Belgesel|Sinema|"
+    r"Ulusal|Global|Diğer|Aktüalite|Spor Programı)\s*[-–]?\s*$",
     re.IGNORECASE,
 )
 
 
-# ÖNEMLİ: Program bağlantısından yukarı doğru arama yapar.
-# Program bağlantısını global DOM yakınlığıyla başka kanala bağlamaz.
+# ============================================================
+# TIVIBU DOM EŞLEŞTİRME
+# Kanal bağlantısı yanında logo alt metni ve kanal adı alanları
+# da kontrol edilir. Birden fazla kanal içeren ortak kapsayıcı
+# hiçbir zaman doğrudan eşleşme kabul edilmez.
+# ============================================================
+
 EXTRACT_JS = r"""() => {
-  const timeRe = /\d{1,2}:\d{2}\s*(?:→|➜|[-–])\s*\d{1,2}:\d{2}/;
-  const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-  const anchors = [...document.querySelectorAll('a')];
-  const groups = new Map();
-  const unmapped = [];
+    const timeRe = /\d{1,2}:\d{2}\s*(?:→|➜|[-–])\s*\d{1,2}:\d{2}/;
+    const norm = s => (s || "").replace(/\s+/g, " ").trim();
+    const anchors = [...document.querySelectorAll("a[href]")];
 
-  for (const programAnchor of anchors) {
-    const programText = norm(programAnchor.innerText || programAnchor.textContent);
-    if (!programAnchor.href || !timeRe.test(programText)) continue;
+    const programAnchors = anchors.filter(a =>
+        timeRe.test(norm(a.innerText || a.textContent))
+    );
 
-    let node = programAnchor;
-    let channelHref = '';
-    let channelName = '';
+    const channelPath = href => {
+        try {
+            const u = new URL(href, location.href);
+            if (!u.pathname.toLowerCase().includes("/kanallar/")) return "";
+            return u.origin + u.pathname.replace(/\/+$/, "");
+        } catch (_) {
+            return "";
+        }
+    };
 
-    for (let depth = 0; depth < 35 && node; depth++, node = node.parentElement) {
-      const channelLinks = [...node.querySelectorAll('a[href]')]
-        .filter(a => {
-          try {
-            const u = new URL(a.href, location.href);
-            return u.pathname.toLowerCase().includes('/kanallar/');
-          } catch (_) {
-            return false;
-          }
+    function cleanChannelName(value) {
+        let name = norm(value);
+        name = name.replace(/^Kanal\s*:\s*/i, "");
+        name = name.replace(/^Kanal\s+/i, "");
+        name = name.replace(/\s+/g, " ").trim();
+
+        if (!name || name.length > 70) return "";
+        if (timeRe.test(name)) return "";
+        if (/^(canlı|program akışı|yayın akışı)$/i.test(name)) return "";
+
+        return name;
+    }
+
+    function markersIn(node) {
+        const found = new Map();
+
+        // Kanal bağlantıları
+        for (const a of node.querySelectorAll('a[href*="/kanallar/"]')) {
+            const href = channelPath(a.href);
+            if (!href) continue;
+
+            let name = cleanChannelName(a.innerText || a.textContent);
+
+            if (!name) {
+                const img = a.querySelector("img[alt]");
+                if (img) name = cleanChannelName(img.alt);
+            }
+
+            if (name) found.set(href, {name, href});
+        }
+
+        // Kanal logosu alt metinleri
+        for (const img of node.querySelectorAll("img[alt]")) {
+            const alt = cleanChannelName(img.getAttribute("alt"));
+            if (!alt) continue;
+
+            if (/^kanal\s*:/i.test(img.getAttribute("alt") || "")) {
+                const key = "name:" + alt.toLocaleLowerCase("tr");
+                if (!found.has(key)) {
+                    found.set(key, {name: alt, href: key});
+                }
+            }
+        }
+
+        // Kanal adı taşıyan veri ve erişilebilirlik alanları
+        const selectors = [
+            "[data-channel-name]",
+            "[data-channel]",
+            "[data-channel-title]",
+            "[data-name]",
+            "[aria-label]",
+            "[title]"
+        ];
+
+        for (const selector of selectors) {
+            for (const el of node.querySelectorAll(selector)) {
+                const raw =
+                    el.getAttribute("data-channel-name") ||
+                    el.getAttribute("data-channel-title") ||
+                    el.getAttribute("data-channel") ||
+                    el.getAttribute("data-name") ||
+                    el.getAttribute("aria-label") ||
+                    el.getAttribute("title") || "";
+
+                const name = cleanChannelName(raw);
+
+                if (!name) continue;
+
+                // Genel arayüz başlıklarını kanal sanma.
+                if (/^(bugün|yarın|dün|kanal ara|tüm kanallar)$/i.test(name)) {
+                    continue;
+                }
+
+                const key = "name:" + name.toLocaleLowerCase("tr");
+
+                if (!found.has(key)) {
+                    found.set(key, {name, href: key});
+                }
+            }
+        }
+
+        return found;
+    }
+
+    const groups = new Map();
+    const unmapped = [];
+    const diagnostics = {
+        channelLinks: document.querySelectorAll('a[href*="/kanallar/"]').length,
+        programLinks: programAnchors.length,
+        mappedPrograms: 0,
+        unmappedPrograms: 0,
+        markerMatches: 0,
+        samples: []
+    };
+
+    for (const programAnchor of programAnchors) {
+        const programText = norm(
+            programAnchor.innerText || programAnchor.textContent
+        );
+
+        let node = programAnchor;
+        let match = null;
+        let matchDepth = -1;
+
+        // Program bağlantısının en yakın kapsayıcısından başlayarak
+        // kanal adı veya kanal logosu ara.
+        for (let depth = 0; depth < 25 && node; depth++, node = node.parentElement) {
+            const candidates = markersIn(node);
+
+            if (candidates.size === 1) {
+                match = [...candidates.values()][0];
+                matchDepth = depth;
+                break;
+            }
+
+            // Birden fazla kanal bulunan kapsayıcıyı geç.
+        }
+
+        if (!match) {
+            diagnostics.unmappedPrograms++;
+
+            if (diagnostics.samples.length < 12) {
+                let parentText = "";
+                let parent = programAnchor.parentElement;
+
+                if (parent) {
+                    parentText = norm(parent.innerText || parent.textContent).slice(0, 180);
+                }
+
+                unmapped.push({
+                    program: programText,
+                    parent: parentText
+                });
+
+                diagnostics.samples.push({
+                    program: programText,
+                    parent: parentText
+                });
+            }
+
+            continue;
+        }
+
+        diagnostics.markerMatches++;
+
+        const key = match.href ||
+            ("name:" + match.name.toLocaleLowerCase("tr"));
+
+        if (!groups.has(key)) {
+            groups.set(key, {
+                name: match.name,
+                href: match.href,
+                items: [],
+                seen: new Set(),
+                depths: []
+            });
+        }
+
+        const group = groups.get(key);
+
+        if (!group.seen.has(programText)) {
+            group.seen.add(programText);
+            group.items.push(programText);
+            group.depths.push(matchDepth);
+            diagnostics.mappedPrograms++;
+        }
+    }
+
+    const rows = [];
+
+    for (const [key, group] of groups.entries()) {
+        if (!group.items.length) continue;
+
+        rows.push({
+            name: group.name,
+            href: group.href,
+            items: group.items,
+            depth: group.depths
         });
-
-      const unique = new Map();
-
-      for (const link of channelLinks) {
-        const href = link.href.split('#')[0];
-        const name = norm(link.innerText || link.textContent) ||
-          norm(link.querySelector('img[alt]')?.getAttribute('alt'))
-            .replace(/^Kanal\s*:\s*/i, '');
-
-        if (href && name) unique.set(href, { href, name });
-      }
-
-      if (unique.size === 1) {
-        const match = [...unique.values()][0];
-        channelHref = match.href;
-        channelName = match.name;
-        break;
-      }
     }
 
-    if (!channelHref || !channelName) {
-      unmapped.push({
-        href: programAnchor.href,
-        firstProgram: programText,
-        reason: 'Üst kartta tek bir /kanallar/ bağlantısı bulunamadı'
-      });
-      continue;
-    }
-
-    if (!groups.has(channelHref)) {
-      groups.set(channelHref, {
-        name: channelName,
-        items: [],
-        seen: new Set()
-      });
-    }
-
-    const group = groups.get(channelHref);
-
-    if (!group.seen.has(programText)) {
-      group.seen.add(programText);
-      group.items.push(programText);
-    }
-  }
-
-  const rows = [];
-
-  for (const [href, group] of groups.entries()) {
-    if (group.items.length) {
-      rows.push({
-        name: group.name,
-        href,
-        items: group.items
-      });
-    }
-  }
-
-  return {
-    rows,
-    groupCount: groups.size + unmapped.length,
-    diagnostics: {
-      programGroupCount: groups.size + unmapped.length,
-      mappedGroupCount: rows.length,
-      unmappedGroupCount: unmapped.length,
-      unmappedSamples: unmapped.slice(0, 10)
-    }
-  };
+    return {
+        rows,
+        diagnostics: {
+            ...diagnostics,
+            mappedChannels: rows.length,
+            unmappedPrograms: programAnchors.length - diagnostics.mappedPrograms,
+            samples: diagnostics.samples
+        }
+    };
 }"""
 
 
@@ -158,6 +283,7 @@ def clean_text(value):
 
 def slugify(value):
     value = clean_text(value)
+
     replacements = {
         "ç": "c", "ğ": "g", "ı": "i", "ö": "o",
         "ş": "s", "ü": "u", "â": "a", "î": "i", "û": "u",
@@ -231,7 +357,7 @@ def open_category(page, category_name, path):
     except PlaywrightTimeoutError:
         pass
 
-    page.wait_for_timeout(1000)
+    page.wait_for_timeout(1400)
 
 
 def select_date(page, label):
@@ -338,26 +464,31 @@ def collect_all(page, today):
             diagnostics = extracted.get("diagnostics", {})
 
             print(
-                f"    Program grubu: "
-                f"{diagnostics.get('programGroupCount', 0)}"
+                f"    Kanal bağlantısı: {diagnostics.get('channelLinks', 0)}"
             )
             print(
-                f"    Eşleşen kanal: "
-                f"{diagnostics.get('mappedGroupCount', 0)}"
+                f"    Program bağlantısı: {diagnostics.get('programLinks', 0)}"
             )
             print(
-                f"    Eşleşmeyen grup: "
-                f"{diagnostics.get('unmappedGroupCount', 0)}"
+                f"    Kanal adı/logo eşleşmesi: {diagnostics.get('markerMatches', 0)}"
+            )
+            print(
+                f"    Eşleşen kanal: {diagnostics.get('mappedChannels', 0)}"
+            )
+            print(
+                f"    Eşleşmeyen program: {diagnostics.get('unmappedPrograms', 0)}"
             )
 
-            for sample in diagnostics.get("unmappedSamples", [])[:3]:
+            for sample in diagnostics.get("samples", [])[:3]:
                 print(
-                    "    Eşleşmedi:",
-                    sample.get("firstProgram", "")
+                    "    Eşleşmeyen örnek:",
+                    sample.get("program", ""),
+                    "| kapsayıcı:",
+                    sample.get("parent", "")
                 )
 
             if not rows:
-                print(f"    UYARI: {label} için eşleşen program yok.")
+                print(f"    UYARI: {label} için kanal eşleşmesi bulunamadı.")
                 continue
 
             day_program_count = 0
@@ -404,7 +535,7 @@ def collect_all(page, today):
                         day_program_count += 1
 
             print(
-                f"    {len(rows)} eşleşen grup / "
+                f"    {len(rows)} grup / "
                 f"{len(category_channels)} kanal / "
                 f"{day_program_count} yeni program"
             )
@@ -480,7 +611,12 @@ def build_xml(channel_names, programs):
     ET.indent(tree, space="  ")
 
     temp_file = OUTPUT_FILE + ".tmp"
-    tree.write(temp_file, encoding="utf-8", xml_declaration=True)
+
+    tree.write(
+        temp_file,
+        encoding="utf-8",
+        xml_declaration=True
+    )
 
     ET.parse(temp_file)
     os.replace(temp_file, OUTPUT_FILE)
@@ -518,7 +654,7 @@ def main():
 
     print("=" * 68)
     print("TIVIBU 7 GÜNLÜK EPG")
-    print("Önceki program bağlantısı eşleştirme yöntemi geri yüklendi")
+    print("Kanal logosu ve kanal adı alanıyla eşleştirme")
     print(f"Kaynak: {LIVE_TV_URL}")
     print(f"Başlangıç: {today.strftime('%d.%m.%Y')}")
     print(f"Kategori sayısı: {len(CATEGORY_PAGES)}")
