@@ -60,7 +60,6 @@ EXTRACT_JS = r"""() => {
   const groups = new Map();
   const unmapped = [];
 
-  // Eski çalışan betikteki yöntem korunur:
   // Kanal adı /kanallar/ bağlantısının kendi metninden alınır.
   // Program kartındaki resim alt metninden kanal adı tahmin edilmez.
   for (const programAnchor of anchors) {
@@ -226,9 +225,6 @@ def date_label(day, today):
 def open_category(page, category_name, path):
     url = urljoin(BASE_URL, path)
 
-    print(f"\nKategori açılıyor: {category_name}")
-    print(f"Adres: {url}")
-
     page.goto(
         url,
         wait_until="domcontentloaded",
@@ -389,35 +385,11 @@ def collect_all(page, today):
             selected_day = today + timedelta(days=offset)
             label = date_label(selected_day, today)
 
-            print(f"  {label} taranıyor...")
-
             select_date(page, label)
 
             extracted = page.evaluate(EXTRACT_JS)
             rows = extracted.get("rows", [])
-            diagnostics = extracted.get("diagnostics", {})
-
-            if diagnostics.get("unmappedGroupCount", 0):
-                print(
-                    f"  EŞLEŞMEYEN PROGRAM GRUBU: "
-                    f"{diagnostics.get('unmappedGroupCount')} / "
-                    f"{diagnostics.get('programGroupCount')}"
-                )
-                for sample in diagnostics.get("unmappedSamples", [])[:3]:
-                    print(
-                        "    Eşleşmedi:",
-                        sample.get("firstProgram", "")
-                    )
-
             if not rows:
-                print(
-                    f"  UYARI: {category_name} / {label}: "
-                    f"program grubu bulunamadı."
-                )
-                print(
-                    "  Tanılama:",
-                    diagnostics
-                )
                 continue
 
             day_program_count = 0
@@ -465,17 +437,6 @@ def collect_all(page, today):
                         }
 
                         day_program_count += 1
-
-            print(
-                f"    {len(rows)} kart / "
-                f"{len(category_channels)} kategori kanalı / "
-                f"{day_program_count} yeni program"
-            )
-
-        print(
-            f"  {category_name}: "
-            f"{len(category_channels)} kanal bulundu."
-        )
 
     return (
         sorted(all_channels, key=str.casefold),
