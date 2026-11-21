@@ -25,14 +25,10 @@ ISTANBUL = ZoneInfo("Europe/Istanbul")
 
 DAYS = 7
 PAGE_TIMEOUT = 60000
-PAGE_WAIT_MS = 700
-DATE_WAIT_MS = 500
+CHANNEL_WAIT_MS = 700
+DATE_WAIT_MS = 450
 
 MIN_CHANNELS = 30
-
-BAD_CHANNELS = {
-    "BENİM KANALIM",
-}
 
 KNOWN_CHANNEL_IDS = {
     "DMAX": "ch00000000000000001124",
@@ -41,51 +37,7 @@ KNOWN_CHANNEL_IDS = {
 
 
 # ============================================================
-# TARİH YARDIMCILARI
-# ============================================================
-
-def date_label(day, today):
-    if day == today:
-        return "Bugün"
-
-    if day == today + timedelta(days=1):
-        return "Yarın"
-
-    return day.strftime("%d.%m.%Y")
-
-
-def make_datetime(day, hour, minute):
-    return datetime(
-        day.year,
-        day.month,
-        day.day,
-        hour,
-        minute,
-        tzinfo=ISTANBUL
-    )
-
-
-def select_date(page, label):
-    locator = page.get_by_text(
-        label,
-        exact=True
-    )
-
-    if locator.count() == 0:
-        raise RuntimeError(
-            f"Tarih seçeneği bulunamadı: {label}"
-        )
-
-    locator.first.click(
-        timeout=12000,
-        force=True
-    )
-
-    page.wait_for_timeout(DATE_WAIT_MS)
-
-
-# ============================================================
-# KANAL LİSTESİ
+# JAVASCRIPT: KANAL KARTLARI
 # ============================================================
 
 GET_CHANNELS_JS = r"""() => {
@@ -110,11 +62,7 @@ GET_CHANNELS_JS = r"""() => {
             card.getAttribute('channelcode')
         );
 
-        const link = card.querySelector(
-            'a[href^="/kanallar/"]'
-        );
-
-        if (!name || !id || !link) continue;
+        if (!name || !id) continue;
 
         const key = id.toLowerCase();
 
@@ -124,8 +72,7 @@ GET_CHANNELS_JS = r"""() => {
 
         result.push({
             name: name,
-            channel_id: id,
-            channel_url: link.getAttribute('href')
+            channel_id: id
         });
     }
 
@@ -136,57 +83,8 @@ GET_CHANNELS_JS = r"""() => {
 }"""
 
 
-def get_channel_list(page):
-    print("\nTüm Kanallar sayfası açılıyor...")
-
-    page.goto(
-        LIVE_TV_URL,
-        wait_until="domcontentloaded",
-        timeout=PAGE_TIMEOUT
-    )
-
-    try:
-        page.wait_for_load_state(
-            "networkidle",
-            timeout=12000
-        )
-    except PlaywrightTimeoutError:
-        pass
-
-    page.wait_for_timeout(1200)
-
-    result = page.evaluate(GET_CHANNELS_JS)
-
-    channels = result.get("channels", [])
-
-    print(
-        f"Kanal kartı: {result.get('card_count', 0)}"
-    )
-
-    print(
-        f"Benzersiz kanal ID: {len(channels)}"
-    )
-
-    print("\n===== KANAL LİSTESİ =====")
-
-    for channel in channels:
-        print(
-            f"{channel['name']}: "
-            f"{channel['channel_id']} | "
-            f"{channel['channel_url']}"
-        )
-
-    if len(channels) < MIN_CHANNELS:
-        raise RuntimeError(
-            f"Yalnızca {len(channels)} kanal bulundu. "
-            "Kanal listesi eksik olduğu için XML korunuyor."
-        )
-
-    return channels
-
-
 # ============================================================
-# PROGRAM HTML OKUMA
+# JAVASCRIPT: SEÇİLİ KANALIN PROGRAMLARI
 # ============================================================
 
 GET_PROGRAMS_JS = r"""() => {
@@ -194,7 +92,9 @@ GET_PROGRAMS_JS = r"""() => {
         (s || '').replace(/\s+/g, ' ').trim();
 
     const anchors = [
-        ...document.querySelectorAll('a')
+        ...document.querySelectorAll(
+            'a[href*="/rv?i="]'
+        )
     ];
 
     const programs = [];
@@ -220,26 +120,10 @@ GET_PROGRAMS_JS = r"""() => {
             continue;
         }
 
-        const title = clean(
-            titleElement.textContent
-        );
-
-        const start = clean(
-            startElement.textContent
-        );
-
-        const finish = clean(
-            finishElement.textContent
-        );
-
-        if (!title || !start || !finish) {
-            continue;
-        }
-
         programs.push({
-            title: title,
-            start: start,
-            finish: finish,
+            title: clean(titleElement.textContent),
+            start: clean(startElement.textContent),
+            finish: clean(finishElement.textContent),
             href: a.getAttribute('href') || ''
         });
     }
@@ -248,15 +132,37 @@ GET_PROGRAMS_JS = r"""() => {
 }"""
 
 
-TIME_RE = re.compile(
-    r"^(\d{1,2}):(\d{2})$"
-)
+# ============================================================
+# YARDIMCI FONKSİYONLAR
+# ============================================================
+
+def clean_text(value):
+    value = html.unescape(
+        str(value or "")
+    )
+
+    return re.sub(
+        r"\s+",
+        " ",
+        value
+    ).strip()
+
+
+def date_label(day, today):
+    if day == today:
+        return "Bugün"
+
+    if day == today + timedelta(days=1):
+        return "Yarın"
+
+    return day.strftime("%d.%m.%Y")
 
 
 def parse_time(value):
-    value = str(value or "").strip()
-
-    match = TIME_RE.fullmatch(value)
+    match = re.fullmatch(
+        r"(\d{1,2}):(\d{2})",
+        str(value or "").strip()
+    )
 
     if not match:
         return None
@@ -270,12 +176,20 @@ def parse_time(value):
     return hour, minute
 
 
-def get_channel_id_from_href(href):
-    if not href:
-        return None
+def make_datetime(day, hour, minute):
+    return datetime(
+        day.year,
+        day.month,
+        day.day,
+        hour,
+        minute,
+        tzinfo=ISTANBUL
+    )
 
+
+def get_channel_id_from_href(href):
     decoded = unquote(
-        html.unescape(str(href))
+        html.unescape(str(href or ""))
     )
 
     match = re.search(
@@ -284,27 +198,146 @@ def get_channel_id_from_href(href):
         re.IGNORECASE
     )
 
-    if not match:
-        return None
-
-    return match.group(1)
+    return match.group(1) if match else None
 
 
-def parse_programs(raw_programs, channel, selected_day):
+# ============================================================
+# SAYFAYI AÇ
+# ============================================================
+
+def open_live_tv(page):
+    print("\nTivibu Tüm Kanallar sayfası açılıyor...")
+
+    page.goto(
+        LIVE_TV_URL,
+        wait_until="domcontentloaded",
+        timeout=PAGE_TIMEOUT
+    )
+
+    try:
+        page.wait_for_load_state(
+            "networkidle",
+            timeout=12000
+        )
+    except PlaywrightTimeoutError:
+        pass
+
+    page.wait_for_timeout(1500)
+
+
+# ============================================================
+# KANALLARI BUL
+# ============================================================
+
+def get_channels(page):
+    result = page.evaluate(
+        GET_CHANNELS_JS
+    )
+
+    channels = result.get(
+        "channels",
+        []
+    )
+
+    print(
+        f"Kanal kartı: {result.get('card_count', 0)}"
+    )
+
+    print(
+        f"Benzersiz kanal ID: {len(channels)}"
+    )
+
+    print("\n===== KANAL LİSTESİ =====")
+
+    for channel in channels:
+        print(
+            f"{channel['name']}: "
+            f"{channel['channel_id']}"
+        )
+
+    if len(channels) < MIN_CHANNELS:
+        raise RuntimeError(
+            f"Yalnızca {len(channels)} kanal bulundu. "
+            "Kanal listesi eksik."
+        )
+
+    return channels
+
+
+# ============================================================
+# KANAL KARTINI SEÇ
+# ============================================================
+
+def select_channel(page, channel):
+    channel_id = channel["channel_id"]
+
+    locator = page.locator(
+        '.fullLink[channelcode="' + channel_id + '"]'
+    )
+
+    if locator.count() == 0:
+        raise RuntimeError(
+            f"Kanal kartı bulunamadı: {channel['name']}"
+        )
+
+    locator.first.scroll_into_view_if_needed(
+        timeout=15000
+    )
+
+    locator.first.click(
+        timeout=15000,
+        force=True
+    )
+
+    page.wait_for_timeout(
+        CHANNEL_WAIT_MS
+    )
+
+
+# ============================================================
+# TARİH SEÇ
+# ============================================================
+
+def select_date(page, label):
+    locator = page.get_by_text(
+        label,
+        exact=True
+    )
+
+    if locator.count() == 0:
+        raise RuntimeError(
+            f"Tarih seçeneği bulunamadı: {label}"
+        )
+
+    locator.first.click(
+        timeout=12000,
+        force=True
+    )
+
+    page.wait_for_timeout(
+        DATE_WAIT_MS
+    )
+
+
+# ============================================================
+# PROGRAMLARI TARİH VE SAATE DÖNÜŞTÜR
+# ============================================================
+
+def parse_programs(
+    raw_programs,
+    channel,
+    selected_day,
+    window_start,
+    window_end
+):
     result = []
 
     expected_id = channel["channel_id"].lower()
 
     for raw in raw_programs:
-        title = html.unescape(
-            str(raw.get("title", "")).strip()
+        title = clean_text(
+            raw.get("title")
         )
-
-        title = re.sub(
-            r"\s+",
-            " ",
-            title
-        ).strip()
 
         if not title:
             continue
@@ -321,12 +354,15 @@ def parse_programs(raw_programs, channel, selected_day):
             continue
 
         href_id = get_channel_id_from_href(
-            raw.get("href", "")
+            raw.get("href")
         )
 
-        # Program bağlantısında kanal ID'si varsa
-        # mutlaka açık olan kanalın ID'siyle karşılaştır.
-        if href_id and href_id.lower() != expected_id:
+        # Program bağlantısındaki kanal ID'si
+        # seçili kanal ile aynı olmalı.
+        if not href_id:
+            continue
+
+        if href_id.lower() != expected_id:
             continue
 
         sh, sm = start_time
@@ -338,13 +374,13 @@ def parse_programs(raw_programs, channel, selected_day):
             sm
         )
 
-        stop_day = selected_day
+        finish_day = selected_day
 
         if (eh * 60 + em) <= (sh * 60 + sm):
-            stop_day += timedelta(days=1)
+            finish_day += timedelta(days=1)
 
         stop = make_datetime(
-            stop_day,
+            finish_day,
             eh,
             em
         )
@@ -355,63 +391,59 @@ def parse_programs(raw_programs, channel, selected_day):
         if (stop - start).total_seconds() > 24 * 3600:
             continue
 
+        if (
+            start < window_start
+            or start >= window_end
+        ):
+            continue
+
         result.append({
             "title": title,
             "start": start,
             "stop": stop,
             "channel_id": channel["channel_id"],
-            "channel_name": channel["name"],
+            "channel_name": channel["name"]
         })
 
     return result
 
 
 # ============================================================
-# TEK KANALIN 7 GÜNLÜK YAYIN AKIŞI
+# BİR KANALIN 7 GÜNÜNÜ OKU
 # ============================================================
 
-def collect_channel(page, channel, today, window_start, window_end):
+def collect_channel(
+    page,
+    channel,
+    today,
+    window_start,
+    window_end
+):
     name = channel["name"]
     channel_id = channel["channel_id"]
 
-    known_id = KNOWN_CHANNEL_IDS.get(name)
+    known_id = KNOWN_CHANNEL_IDS.get(name.upper())
 
     if known_id and known_id != channel_id:
         print(
-            f"ID UYUŞMAZLIĞI: {name} | "
+            f"ID HATASI: {name} | "
             f"{channel_id} | Beklenen: {known_id}"
         )
         return []
-
-    channel_url = urljoin(
-        BASE_URL,
-        channel["channel_url"]
-    )
 
     print(
         f"\nKANAL: {name} | {channel_id}"
     )
 
     try:
-        page.goto(
-            channel_url,
-            wait_until="domcontentloaded",
-            timeout=PAGE_TIMEOUT
+        select_channel(
+            page,
+            channel
         )
-
-        try:
-            page.wait_for_load_state(
-                "networkidle",
-                timeout=8000
-            )
-        except PlaywrightTimeoutError:
-            pass
-
-        page.wait_for_timeout(PAGE_WAIT_MS)
 
     except Exception as exc:
         print(
-            f"  Kanal sayfası açılamadı: {exc}"
+            f"  Kanal seçilemedi: {exc}"
         )
         return []
 
@@ -451,18 +483,14 @@ def collect_channel(page, channel, today, window_start, window_end):
         parsed = parse_programs(
             raw_programs,
             channel,
-            selected_day
+            selected_day,
+            window_start,
+            window_end
         )
 
         added = 0
 
         for program in parsed:
-            if (
-                program["start"] < window_start
-                or program["start"] >= window_end
-            ):
-                continue
-
             key = (
                 program["channel_id"].lower(),
                 program["title"].casefold(),
@@ -476,11 +504,13 @@ def collect_channel(page, channel, today, window_start, window_end):
 
         print(
             f"  {label}: "
-            f"{len(parsed)} program okundu, "
+            f"{len(parsed)} program / "
             f"{added} yeni kayıt"
         )
 
-    result = list(channel_programs.values())
+    result = list(
+        channel_programs.values()
+    )
 
     print(
         f"  SONUÇ: {name} - "
@@ -491,11 +521,13 @@ def collect_channel(page, channel, today, window_start, window_end):
 
 
 # ============================================================
-# BÜTÜN KANALLARI TOPLA
+# BÜTÜN KANALLARI TARA
 # ============================================================
 
 def collect_all(page, today):
-    channels = get_channel_list(page)
+    open_live_tv(page)
+
+    channels = get_channels(page)
 
     window_start = make_datetime(
         today,
@@ -512,28 +544,21 @@ def collect_all(page, today):
     )
 
     all_programs = {}
-
     successful_channels = set()
-
     failed_channels = []
 
-    total = len(channels)
-
     print("\n" + "=" * 68)
-    print("KANALLARIN YAYIN AKIŞLARI TEK TEK OKUNUYOR")
-    print(f"Toplam kanal: {total}")
-    print(f"Toplam gün: {DAYS}")
+    print("KANALLAR TEK TEK SEÇİLEREK YAYIN AKIŞLARI OKUNUYOR")
     print("=" * 68)
 
-    for index, channel in enumerate(channels, start=1):
+    for index, channel in enumerate(
+        channels,
+        start=1
+    ):
         print(
-            f"\n[{index}/{total}] "
+            f"\n[{index}/{len(channels)}] "
             f"{channel['name']}"
         )
-
-        if channel["name"].upper() in BAD_CHANNELS:
-            print("  Atlandı.")
-            continue
 
         programs = collect_channel(
             page,
@@ -572,15 +597,19 @@ def collect_all(page, today):
 
 
 # ============================================================
-# VERİ KONTROLÜ
+# VERİ DOĞRULAMA
 # ============================================================
 
-def validate_data(channels, programs, successful_channels):
+def validate_data(
+    channels,
+    programs,
+    successful_channels
+):
     if len(successful_channels) < MIN_CHANNELS:
         raise RuntimeError(
             f"Yalnızca {len(successful_channels)} kanalın "
-            f"yayın akışı bulundu. Minimum gerekli kanal: "
-            f"{MIN_CHANNELS}. Mevcut XML korunuyor."
+            f"yayın akışı bulundu. Minimum: {MIN_CHANNELS}. "
+            "Mevcut XML korunuyor."
         )
 
     if not programs:
@@ -596,7 +625,7 @@ def validate_data(channels, programs, successful_channels):
     for program in programs:
         if program["channel_id"] not in channel_ids:
             raise RuntimeError(
-                "Programın kanal ID'si kanal listesinde yok: "
+                "Bilinmeyen kanal ID: "
                 + program["channel_id"]
             )
 
@@ -613,33 +642,20 @@ def validate_data(channels, programs, successful_channels):
 
     if len(days) < 6:
         raise RuntimeError(
-            f"Yalnızca {len(days)} farklı yayın günü bulundu. "
+            f"Yalnızca {len(days)} yayın günü bulundu. "
             "Mevcut XML korunuyor."
         )
-
-    # Aynı ID birden fazla kanal adıyla kullanılmasın.
-    id_names = {}
-
-    for channel in channels:
-        channel_id = channel["channel_id"]
-        name = channel["name"]
-
-        if (
-            channel_id in id_names
-            and id_names[channel_id] != name
-        ):
-            raise RuntimeError(
-                f"Kanal ID çakışması: {channel_id}"
-            )
-
-        id_names[channel_id] = name
 
 
 # ============================================================
 # XML OLUŞTUR
 # ============================================================
 
-def build_xml(channels, programs, successful_channels):
+def build_xml(
+    channels,
+    programs,
+    successful_channels
+):
     root = ET.Element(
         "tv",
         {
@@ -655,7 +671,7 @@ def build_xml(channels, programs, successful_channels):
     ]
 
     for channel in used_channels:
-        channel_element = ET.SubElement(
+        element = ET.SubElement(
             root,
             "channel",
             {
@@ -664,7 +680,7 @@ def build_xml(channels, programs, successful_channels):
         )
 
         display = ET.SubElement(
-            channel_element,
+            element,
             "display-name",
             {
                 "lang": "tr"
@@ -680,7 +696,7 @@ def build_xml(channels, programs, successful_channels):
             x["channel_name"].casefold()
         )
     ):
-        programme = ET.SubElement(
+        element = ET.SubElement(
             root,
             "programme",
             {
@@ -695,7 +711,7 @@ def build_xml(channels, programs, successful_channels):
         )
 
         title = ET.SubElement(
-            programme,
+            element,
             "title",
             {
                 "lang": "tr"
@@ -711,17 +727,16 @@ def build_xml(channels, programs, successful_channels):
         space="  "
     )
 
-    # Önce geçici dosyaya yaz.
     tree.write(
         TEMP_FILE,
         encoding="utf-8",
         xml_declaration=True
     )
 
-    # XML dosyasının gerçekten okunabildiğini doğrula.
+    # XML dosyasını kontrol et.
     ET.parse(TEMP_FILE)
 
-    # Ancak doğrulamadan sonra asıl dosyanın üzerine yaz.
+    # Kontrol başarılıysa asıl dosyayı güncelle.
     os.replace(
         TEMP_FILE,
         OUTPUT_FILE
@@ -742,7 +757,8 @@ def main():
     print("=" * 68)
     print("TIVIBU 7 GÜNLÜK EPG")
     print("Yalnızca TÜM KANALLAR")
-    print("Her kanalın kendi yayın akışı ayrı ayrı okunacak.")
+    print("161 kanal kartı tek tek seçilecek.")
+    print("Programlar: programTitle / startTime / finishTime")
     print("=" * 68)
 
     with sync_playwright() as p:
@@ -799,7 +815,7 @@ def main():
     })
 
     print("\n" + "=" * 68)
-    print("TIVIBU EPG BAŞARIYLA OLUŞTURULDU")
+    print("TIVIBU EPG TAMAMLANDI")
     print("=" * 68)
 
     print(
@@ -837,7 +853,9 @@ def main():
         print("\nYAYIN AKIŞI ALINAMAYAN KANALLAR:")
 
         for name in failed_channels:
-            print(f"  {name}")
+            print(
+                f"  {name}"
+            )
 
     print(
         f"\nDosya: {OUTPUT_FILE}"
