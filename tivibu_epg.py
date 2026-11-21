@@ -628,7 +628,7 @@ def collect_all(page, today):
 
                 print(
                     "    DEBUG: Bulunan kanal ID'leri: "
-                    + str(found_ids[:10])
+                    + str(found_ids)
                 )
 
                 matched = [
