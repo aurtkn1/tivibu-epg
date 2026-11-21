@@ -71,18 +71,12 @@ class PageAttributeParser(HTMLParser):
             begin = attrs.get("channeldatebegin", "").strip()
             end = attrs.get("channeldateend", "").strip()
             if begin and end:
-                self._current_date = {
-                    "begin": begin,
-                    "end": end
-                }
+                self._current_date = {"begin": begin, "end": end}
                 self._current_text = []
 
         for key, value in attrs.items():
             normalized = key.lower().replace("-", "").replace("_", "")
-            if normalized in (
-                "channelcolumncode",
-                "channelsearchvalue"
-            ) and value:
+            if normalized in ("channelcolumncode", "channelsearchvalue") and value:
                 self.fields[normalized] = value.strip()
 
     def handle_data(self, data):
@@ -180,7 +174,6 @@ def extract_page_data(page):
 
         for pattern in patterns:
             match = re.search(pattern, source, re.IGNORECASE)
-
             if match:
                 parser.fields[field] = match.group(1).strip()
                 break
@@ -215,7 +208,6 @@ def extract_page_data(page):
 
             if match:
                 csrf_token = html.unescape(match.group(1)).strip()
-
                 if csrf_token:
                     break
 
@@ -224,15 +216,8 @@ def extract_page_data(page):
             "CSRF token bulunamadı. Tivibu sayfa yapısı değişmiş olabilir."
         )
 
-    column_code = parser.fields.get(
-        "channelcolumncode",
-        ""
-    ).strip()
-
-    search_value = parser.fields.get(
-        "channelsearchvalue",
-        ""
-    ).strip()
+    column_code = parser.fields.get("channelcolumncode", "").strip()
+    search_value = parser.fields.get("channelsearchvalue", "").strip()
 
     if not column_code:
         raise RuntimeError(
@@ -240,12 +225,7 @@ def extract_page_data(page):
             "Servise boş kanal koduyla istek gönderilmedi."
         )
 
-    return (
-        csrf_token,
-        column_code,
-        search_value,
-        parser.date_options
-    )
+    return csrf_token, column_code, search_value, parser.date_options
 
 
 def parse_tivibu_date(value):
@@ -284,10 +264,7 @@ def build_target_dates(date_options):
         if dt and dt.date() >= today:
             found.setdefault(dt.date(), item)
 
-    targets = [
-        found[day]
-        for day in sorted(found)[:DAYS]
-    ]
+    targets = [found[day] for day in sorted(found)[:DAYS]]
 
     if len(targets) != DAYS:
         available = ", ".join(
@@ -375,28 +352,145 @@ def first_nonempty(item, keys):
     return ""
 
 
+def unpack_collection(value):
+    """Servisin liste, JSON metni veya sarmalanmış nesne döndürmesini çözer."""
+
+    if value is None:
+        return []
+
+    if isinstance(value, list):
+        return value
+
+    if isinstance(value, str):
+        text = value.strip()
+
+        if not text:
+            return []
+
+        try:
+            return unpack_collection(json.loads(text))
+
+        except json.JSONDecodeError:
+            return []
+
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            normalized = (
+                str(key).lower().replace("_", "").replace("-", "")
+            )
+
+            if normalized in {
+                "items",
+                "data",
+                "list",
+                "result",
+                "rows",
+                "channels",
+                "programs",
+                "prevues",
+                "channelitems",
+                "prevueitems",
+                "channellistviewmodel",
+                "prevuelistviewmodel",
+            }:
+                found = unpack_collection(nested)
+
+                if found:
+                    return found
+
+        if any(k in value for k in (
+            "channelCode",
+            "ChannelCode",
+            "prevueName",
+            "PrevueName",
+            "beginTime",
+            "BeginTime"
+        )):
+            return [value]
+
+    return []
+
+
 def get_list(data, keys):
+    lowered = {
+        str(k).lower(): v
+        for k, v in data.items()
+    }
+
     for key in keys:
         value = data.get(key)
 
-        if isinstance(value, list):
-            return value
+        if value is None:
+            value = lowered.get(key.lower())
+
+        result = unpack_collection(value)
+
+        if result:
+            return result
 
     return []
+
+
+def describe_service_fields(data):
+    """Boş listenin gerçek nedenini bulmak için sınırlı yanıt özeti üretir."""
+
+    names = (
+        "columnChannelViewModel",
+        "channelListViewModel",
+        "channelMobilListViewModel",
+        "prevueListViewModel",
+        "firtPrevueViewModel",
+        "mobilPrevueViewModel",
+    )
+
+    details = []
+
+    for name in names:
+        value = data.get(name)
+
+        if value is None:
+            value = next(
+                (
+                    v for k, v in data.items()
+                    if str(k).lower() == name.lower()
+                ),
+                None
+            )
+
+        if isinstance(value, (list, dict)):
+            preview = json.dumps(
+                value[:1] if isinstance(value, list) else value,
+                ensure_ascii=False
+            )
+
+            details.append(
+                f"{name}: tür={type(value).__name__}, "
+                f"adet={len(value)}, örnek={preview[:900]}"
+            )
+
+        elif isinstance(value, str):
+            details.append(
+                f"{name}: tür=str, uzunluk={len(value)}, "
+                f"örnek={value[:500]}"
+            )
+
+        else:
+            details.append(
+                f"{name}: tür={type(value).__name__}, değer={value!r}"
+            )
+
+    return "\n".join(details)
 
 
 def normalize_channels(data):
     channels = {}
 
-    items = get_list(
-        data,
-        [
-            "channelListViewModel",
-            "ChannelListViewModel",
-            "channels",
-            "Channels",
-        ]
-    )
+    items = get_list(data, [
+        "channelListViewModel",
+        "ChannelListViewModel",
+        "channels",
+        "Channels",
+    ])
 
     for item in items:
         code = first_nonempty(
@@ -440,17 +534,14 @@ def normalize_channels(data):
 
 
 def normalize_programs(data):
-    return get_list(
-        data,
-        [
-            "prevueListViewModel",
-            "PrevueListViewModel",
-            "mobilPrevueViewModel",
-            "MobilPrevueViewModel",
-            "programs",
-            "Programs",
-        ]
-    )
+    return get_list(data, [
+        "prevueListViewModel",
+        "PrevueListViewModel",
+        "mobilPrevueViewModel",
+        "MobilPrevueViewModel",
+        "programs",
+        "Programs",
+    ])
 
 
 def parse_datetime(value):
@@ -632,12 +723,9 @@ def main():
 
     page_html = get_main_page()
 
-    (
-        csrf_token,
-        column_code,
-        search_value,
-        date_options
-    ) = extract_page_data(page_html)
+    csrf_token, column_code, search_value, date_options = (
+        extract_page_data(page_html)
+    )
 
     target_dates = build_target_dates(date_options)
 
@@ -647,7 +735,6 @@ def main():
 
     channels = {}
     all_programs = {}
-
     successful_days = 0
     total_received = 0
 
@@ -674,7 +761,7 @@ def main():
             column_code,
             search_value,
             begin_date,
-            end_date
+            end_date,
         )
 
         day_channels = normalize_channels(data)
@@ -683,12 +770,16 @@ def main():
         if not day_channels and not day_programs:
             keys = ", ".join(
                 str(key)
-                for key in list(data.keys())[:15]
+                for key in list(data.keys())[:25]
             )
 
+            details = describe_service_fields(data)
+
             raise RuntimeError(
-                f"{label} için servis boş kanal/program listesi döndürdü. "
-                f"Yanıt alanları: {keys or 'yok'}. Mevcut XML korunuyor."
+                f"{label} için kanal/program listeleri çözümlenemedi. "
+                f"Yanıt alanları: {keys or 'yok'}.\n"
+                f"Servis alanlarının içeriği:\n{details}\n"
+                "Mevcut XML korunuyor."
             )
 
         for code, info in day_channels.items():
@@ -859,7 +950,8 @@ def main():
     if len(days_found) < 6:
         raise RuntimeError(
             f"Yalnızca {len(days_found)} farklı yayın günü bulundu; "
-            "7 günlük veri doğrulanamadı. Mevcut XML korunuyor."
+            "7 günlük veri doğrulanamadı. "
+            "Mevcut XML korunuyor."
         )
 
     channel_codes = set(named_channels)
@@ -905,6 +997,7 @@ def main():
         print(
             f"İlk gün: {days_found[0].strftime('%d.%m.%Y')}"
         )
+
         print(
             f"Son gün: {days_found[-1].strftime('%d.%m.%Y')}"
         )
