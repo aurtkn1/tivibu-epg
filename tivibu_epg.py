@@ -133,6 +133,96 @@ SELECT_CHANNEL_JS = r"""
 """
 
 
+SELECT_DATE_JS = r"""
+(expectedDate) => {
+    const links = [
+        ...document.querySelectorAll(
+            'a[channeldatebegin][channeldateend]'
+        )
+    ];
+
+    const link = links.find(item => {
+        const begin = (
+            item.getAttribute('channeldatebegin') || ''
+        ).trim();
+
+        return begin.startsWith(expectedDate);
+    });
+
+    if (!link) {
+        return {
+            success: false,
+            reason: 'Tarih bağlantısı DOM içinde bulunamadı',
+            expected: expectedDate,
+            count: links.length
+        };
+    }
+
+    const before = link.classList.contains('active');
+
+    try {
+        link.click();
+
+        return {
+            success: true,
+            method: 'element.click',
+            title: link.getAttribute('title'),
+            beforeActive: before
+        };
+    } catch (error) {
+        try {
+            link.dispatchEvent(
+                new MouseEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window
+                })
+            );
+
+            return {
+                success: true,
+                method: 'dispatchEvent',
+                title: link.getAttribute('title'),
+                beforeActive: before
+            };
+        } catch (secondError) {
+            return {
+                success: false,
+                reason: String(secondError)
+            };
+        }
+    }
+}
+"""
+
+
+GET_DATE_STATE_JS = r"""
+(expectedDate) => {
+    const links = [
+        ...document.querySelectorAll(
+            'a[channeldatebegin][channeldateend]'
+        )
+    ];
+
+    const link = links.find(item => {
+        const begin = (
+            item.getAttribute('channeldatebegin') || ''
+        ).trim();
+
+        return begin.startsWith(expectedDate);
+    });
+
+    if (!link) return null;
+
+    return {
+        active: link.classList.contains('active'),
+        title: link.getAttribute('title'),
+        begin: link.getAttribute('channeldatebegin')
+    };
+}
+"""
+
+
 GET_PROGRAMS_JS = r"""
 () => {
     const anchors = [
@@ -244,59 +334,42 @@ def select_date(page, selected_day, today):
 
     expected = selected_day.strftime("%Y.%m.%d")
 
-    links = page.locator(
-        "a[channeldatebegin][channeldateend]"
+    result = page.evaluate(
+        SELECT_DATE_JS,
+        expected
     )
 
-    count = links.count()
+    if not result or not result.get("success"):
 
-    for index in range(count):
-
-        link = links.nth(index)
-
-        begin = (
-            link.get_attribute("channeldatebegin")
-            or ""
+        reason = (
+            result.get("reason")
+            if result
+            else "Bilinmeyen JavaScript hatası"
         )
 
-        if not begin.startswith(expected):
-            continue
-
-        link.click(
-            timeout=12000,
-            force=True
+        raise RuntimeError(
+            f"Tarih seçilemedi: {expected} - {reason}"
         )
 
-        page.wait_for_timeout(DATE_WAIT_MS)
+    page.wait_for_timeout(DATE_WAIT_MS)
 
-        return True
-
-    if selected_day == today:
-        label = "Bugün"
-    elif selected_day == today + timedelta(days=1):
-        label = "Yarın"
-    else:
-        label = selected_day.strftime("%d.%m.%Y")
-
-    locator = page.get_by_text(
-        label,
-        exact=True
+    state = page.evaluate(
+        GET_DATE_STATE_JS,
+        expected
     )
 
-    if locator.count():
-
-        locator.first.click(
-            timeout=12000,
-            force=True
+    if not state:
+        raise RuntimeError(
+            f"Tarih bağlantısı tıklama sonrası bulunamadı: {expected}"
         )
 
-        page.wait_for_timeout(DATE_WAIT_MS)
+    if not state.get("active"):
+        raise RuntimeError(
+            f"Tarih tıklandı fakat active olmadı: "
+            f"{state.get('title')}"
+        )
 
-        return True
-
-    raise RuntimeError(
-        f"Tarih seçilemedi: {label}"
-    )
+    return True
 
 
 def select_channel(page, channel):
@@ -419,8 +492,6 @@ def collect_all(page, today):
 
     page.wait_for_timeout(3000)
 
-    # ÖNEMLİ DÜZELTME:
-    # Kartların görünür olması değil, DOM'a eklenmiş olması yeterli.
     page.wait_for_selector(
         ".fullLink[channelcode][title]",
         state="attached",
@@ -747,7 +818,8 @@ def main():
     print("=" * 68)
     print("TIVIBU 7 GÜNLÜK EPG")
     print("Yalnızca TÜM KANALLAR")
-    print("161 kanal kartı tek tek seçilecek.")
+    print("Kanal kartları tek tek seçilecek.")
+    print("Tarihler JavaScript element.click() ile seçilecek.")
     print("Programlar: programTitle / startTime / finishTime")
     print("=" * 68)
 
