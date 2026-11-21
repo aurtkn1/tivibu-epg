@@ -357,7 +357,6 @@ def extract_page_data(source):
 
 # ============================================================
 # TARİH SEÇİMİ
-# ESKİ ÇALIŞAN SÜRÜMDEKİ SELECTOR KULLANILIYOR
 # ============================================================
 
 def date_label(day, today):
@@ -396,11 +395,18 @@ def find_date_link(page, label):
 
         try:
 
+            if not link.is_visible():
+                continue
+
             text = normalize_text(
                 link.inner_text(timeout=1500)
             )
 
-            if text == label:
+            title = normalize_text(
+                link.get_attribute("title") or ""
+            )
+
+            if text == label or title == label:
                 return link
 
         except Exception:
@@ -426,64 +432,66 @@ def select_date(page, label):
 
         for index in range(links.count()):
 
+            item = links.nth(index)
+
             try:
-                available.append(
-                    normalize_text(
-                        links.nth(index).inner_text(timeout=1000)
-                    )
+
+                if not item.is_visible():
+                    continue
+
+                text = normalize_text(
+                    item.inner_text(timeout=1000)
                 )
+
+                title = normalize_text(
+                    item.get_attribute("title") or ""
+                )
+
+                available.append(
+                    text or title
+                )
+
             except Exception:
-                pass
+                continue
 
         raise RuntimeError(
-            "Tarih bağlantısı bulunamadı: "
+            "Görünür tarih bağlantısı bulunamadı: "
             + label
-            + ". Bulunan tarih bağlantıları: "
+            + ". Görünür seçenekler: "
             + ", ".join(available)
         )
 
-    old_url = page.url
+    date_begin = link.get_attribute(
+        "channeldatebegin"
+    )
 
-    try:
+    date_end = link.get_attribute(
+        "channeldateend"
+    )
 
-        link.click(
-            timeout=15000,
-            force=True
+    if not date_begin or not date_end:
+
+        raise RuntimeError(
+            "Tarih bağlantısında tarih bilgileri eksik: "
+            + label
         )
 
-    except PlaywrightTimeoutError:
-
-        # Tıklama sonrası sayfa geçişi gecikirse
-        # yüklenme kontrolü aşağıda yapılır.
-        pass
-
-    try:
-
-        page.wait_for_load_state(
-            "domcontentloaded",
-            timeout=15000
-        )
-
-    except PlaywrightTimeoutError:
-        pass
+    # Görünür tarih bağlantısına JavaScript ile tıkla.
+    link.evaluate(
+        "(element) => element.click()"
+    )
 
     page.wait_for_timeout(
         DATE_WAIT_MS
     )
 
     print(
-        "  Tarih bağlantısı seçildi:",
+        "  Tarih seçildi:",
         label,
+        "|",
+        date_begin,
         flush=True
     )
-
-    if page.url != old_url:
-
-        print(
-            "  Yeni sayfa adresi:",
-            page.url,
-            flush=True
-        )
 
 
 # ============================================================
@@ -534,9 +542,6 @@ def collect_seven_days(page, date_labels, base_date):
 
     all_channels = {}
 
-    # Bugün sayfa açıldığında zaten seçili.
-    # Bugün için tıklama yapılmıyor.
-
     for day_index, label in enumerate(
         date_labels,
         1
@@ -548,6 +553,7 @@ def collect_seven_days(page, date_labels, base_date):
             flush=True
         )
 
+        # Bugün sayfa açıldığında zaten seçili.
         if label != "Bugün":
 
             select_date(
@@ -833,7 +839,7 @@ def main():
 
     print("=" * 64)
     print("TIVIBU 7 GÜNLÜK EPG")
-    print("Tarih bağlantıları: channeldatebegin/channeldateend")
+    print("Görünür tarih bağlantısı üzerinden seçim")
     print("Kaynak:", LIVE_URL)
 
     base_date = datetime.now().date()
