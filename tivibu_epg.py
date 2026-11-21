@@ -7,12 +7,8 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from xml.etree import ElementTree as ET
 
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 
-
-# ============================================================
-# AYARLAR
-# ============================================================
 
 BASE_URL = "https://www.tivibu.com.tr"
 LIVE_TV_URL = BASE_URL + "/canli-tv"
@@ -23,9 +19,8 @@ TEMP_FILE = OUTPUT_FILE + ".tmp"
 ISTANBUL = ZoneInfo("Europe/Istanbul")
 
 DAYS = 7
-
 PAGE_TIMEOUT = 60000
-CHANNEL_WAIT_MS = 1000
+CHANNEL_WAIT_MS = 1200
 DATE_WAIT_MS = 1200
 
 MIN_CHANNELS = 30
@@ -40,10 +35,6 @@ BAD_CHANNELS = {
 
 TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
 
-
-# ============================================================
-# JAVASCRIPT: TÜM KANALLARI OKU
-# ============================================================
 
 GET_CHANNELS_JS = r"""
 () => {
@@ -84,10 +75,6 @@ GET_CHANNELS_JS = r"""
 """
 
 
-# ============================================================
-# JAVASCRIPT: KANALI GÖRÜNÜRLÜK BEKLEMEDEN SEÇ
-# ============================================================
-
 SELECT_CHANNEL_JS = r"""
 (channelId) => {
     const cards = [
@@ -108,8 +95,6 @@ SELECT_CHANNEL_JS = r"""
         };
     }
 
-    // Önce doğrudan kartın click olayını çalıştır.
-    // Playwright görünürlük kontrolü yapılmaz.
     const card = matches[0];
 
     try {
@@ -148,10 +133,6 @@ SELECT_CHANNEL_JS = r"""
 """
 
 
-# ============================================================
-# JAVASCRIPT: SEÇİLEN KANALIN PROGRAMLARINI OKU
-# ============================================================
-
 GET_PROGRAMS_JS = r"""
 () => {
     const anchors = [
@@ -170,9 +151,7 @@ GET_PROGRAMS_JS = r"""
             decoded = decodeURIComponent(href);
         } catch (_) {}
 
-        const match = decoded.match(
-            /\b(ch\d{6,})\b/i
-        );
+        const match = decoded.match(/\b(ch\d{6,})\b/i);
 
         if (!match) continue;
 
@@ -250,10 +229,6 @@ GET_PROGRAMS_JS = r"""
 """
 
 
-# ============================================================
-# METİN TEMİZLEME
-# ============================================================
-
 def clean_text(value):
     value = html.unescape(str(value or ""))
     value = value.replace("\xa0", " ")
@@ -264,10 +239,6 @@ def clean_text(value):
 def normalize_name(value):
     return clean_text(value).upper()
 
-
-# ============================================================
-# TARİH SEÇİMİ
-# ============================================================
 
 def select_date(page, selected_day, today):
 
@@ -300,7 +271,6 @@ def select_date(page, selected_day, today):
 
         return True
 
-    # Yedek yöntem: görünen tarih metni
     if selected_day == today:
         label = "Bugün"
     elif selected_day == today + timedelta(days=1):
@@ -329,10 +299,6 @@ def select_date(page, selected_day, today):
     )
 
 
-# ============================================================
-# KANAL SEÇİMİ
-# ============================================================
-
 def select_channel(page, channel):
 
     channel_id = channel["channel_id"]
@@ -358,10 +324,6 @@ def select_channel(page, channel):
 
     return result
 
-
-# ============================================================
-# PROGRAM SAATLERİNİ TARİHE DÖNÜŞTÜR
-# ============================================================
 
 def parse_clock(value):
 
@@ -424,7 +386,6 @@ def assign_program_times(items, selected_day):
             tzinfo=ISTANBUL
         )
 
-        # Gece yarısını geçen program
         if finish <= start:
             finish += timedelta(days=1)
 
@@ -446,10 +407,6 @@ def assign_program_times(items, selected_day):
     return result
 
 
-# ============================================================
-# TÜM KANALLARI VE 7 GÜNLÜK PROGRAMLARI TOPLA
-# ============================================================
-
 def collect_all(page, today):
 
     print("Tivibu Tüm Kanallar sayfası açılıyor...")
@@ -462,8 +419,11 @@ def collect_all(page, today):
 
     page.wait_for_timeout(3000)
 
+    # ÖNEMLİ DÜZELTME:
+    # Kartların görünür olması değil, DOM'a eklenmiş olması yeterli.
     page.wait_for_selector(
         ".fullLink[channelcode][title]",
+        state="attached",
         timeout=30000
     )
 
@@ -583,7 +543,6 @@ def collect_all(page, today):
                     GET_PROGRAMS_JS
                 )
 
-                # Yalnızca seçili kanalın programları
                 matched = [
                     item
                     for item in raw_programs
@@ -653,10 +612,6 @@ def collect_all(page, today):
         list(all_programs.values())
     )
 
-
-# ============================================================
-# XML OLUŞTUR
-# ============================================================
 
 def build_xml(channels, programs):
 
@@ -735,26 +690,19 @@ def build_xml(channels, programs):
         space="  "
     )
 
-    # Önce geçici dosyaya yaz
     tree.write(
         TEMP_FILE,
         encoding="utf-8",
         xml_declaration=True
     )
 
-    # Geçici XML dosyasını doğrula
     ET.parse(TEMP_FILE)
 
-    # Doğrulama başarılıysa asıl dosyanın üzerine yaz
     os.replace(
         TEMP_FILE,
         OUTPUT_FILE
     )
 
-
-# ============================================================
-# VERİ KONTROLÜ
-# ============================================================
 
 def validate_data(channels, programs):
 
@@ -787,10 +735,6 @@ def validate_data(channels, programs):
             "Mevcut epg.xml korunuyor."
         )
 
-
-# ============================================================
-# ANA İŞLEM
-# ============================================================
 
 def main():
 
