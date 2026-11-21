@@ -56,120 +56,76 @@ CATEGORY_RE = re.compile(
 EXTRACT_JS = r"""() => {
   const timeRe = /\d{1,2}:\d{2}\s*(?:→|➜|[-–])\s*\d{1,2}:\d{2}/;
   const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-
   const anchors = [...document.querySelectorAll('a')];
   const groups = new Map();
 
-  // Program bağlantılarını kanal bazında grupla.
+  // Program bağlantılarını URL bazında grupla.
+  // Kanal adı tahmin edilmez; her grup kendi kartındaki logo ile eşleştirilir.
   for (const a of anchors) {
     const text = norm(a.innerText || a.textContent);
-
     if (!a.href || !timeRe.test(text)) continue;
 
-    if (!groups.has(a.href)) {
-      groups.set(a.href, []);
-    }
-
-    groups.get(a.href).push({
-      text,
-      element: a
-    });
+    if (!groups.has(a.href)) groups.set(a.href, []);
+    groups.get(a.href).push({ text, element: a });
   }
-
-  // Sayfadaki kanal logolarından kanal adlarını al.
-  const logoNames = [];
-
-  for (const img of document.querySelectorAll('img[alt]')) {
-    const alt = norm(img.getAttribute('alt'));
-
-    if (!/^Kanal\s*:/i.test(alt)) continue;
-
-    const name = alt.replace(/^Kanal\s*:\s*/i, '').trim();
-
-    if (name && !logoNames.includes(name)) {
-      logoNames.push(name);
-    }
-  }
-
-  const usableNames = logoNames.filter(
-    name => ![
-      'BENİM KANALIM',
-      'FAVORİ KANALLARIM'
-    ].includes(name.toLocaleUpperCase('tr-TR'))
-  );
 
   const out = [];
+  const unmapped = [];
   const entries = [...groups.entries()];
 
-  for (let i = 0; i < entries.length; i++) {
-    const [href, items] = entries[i];
-
+  for (const [href, items] of entries) {
     const first = items[0].element;
-    let name = '';
     let node = first;
+    let matchedName = '';
+    let matchedNode = null;
 
-    // Önce program kartının kendi kapsayıcısından
-    // kanal adını bulmaya çalış.
-    for (
-      let depth = 0;
-      depth < 14 && node;
-      depth++, node = node.parentElement
-    ) {
-      const imgs = [...node.querySelectorAll('img[alt]')]
+    // Program bağlantısından yukarı çıkarak, yalnızca tek kanal logosu
+    // ve yalnızca bu programa ait bağlantıları içeren en yakın kartı bul.
+    for (let depth = 0; depth < 18 && node; depth++, node = node.parentElement) {
+      const logos = [...node.querySelectorAll('img[alt]')]
         .map(img => norm(img.getAttribute('alt')))
         .filter(alt => /^Kanal\s*:/i.test(alt));
 
       const timeLinks = [...node.querySelectorAll('a')].filter(a =>
         timeRe.test(norm(a.innerText || a.textContent))
       );
-
       const hrefs = new Set(timeLinks.map(a => a.href));
 
-      if (
-        imgs.length === 1 &&
-        hrefs.size === 1 &&
-        hrefs.has(href)
-      ) {
-        name = imgs[0]
-          .replace(/^Kanal\s*:\s*/i, '')
-          .trim();
-
+      if (logos.length === 1 && hrefs.size === 1 && hrefs.has(href)) {
+        matchedName = logos[0].replace(/^Kanal\s*:\s*/i, '').trim();
+        matchedNode = node;
         break;
       }
     }
 
-    // Kapsayıcıdan bulunamazsa logo sırasını kullan.
-    if (!name && i < usableNames.length) {
-      name = usableNames[i];
+    // Sıra bazlı isim ataması KESİNLİKLE yapılmaz.
+    // Eşleşme kesin değilse bu grup atlanır ve tanılamaya yazılır.
+    if (!matchedName) {
+      unmapped.push({ href, firstProgram: items[0].text, itemCount: items.length });
+      continue;
     }
 
-    const texts = items.map(item => item.text);
+    // Aynı kartın program bağlantılarını bir kez al.
+    const cardLinks = [...matchedNode.querySelectorAll('a')].filter(a =>
+      a.href === href && timeRe.test(norm(a.innerText || a.textContent))
+    );
+    const texts = cardLinks
+      .map(a => norm(a.innerText || a.textContent))
+      .filter(Boolean);
 
-    if (name && texts.length) {
-      out.push({
-        name,
-        href,
-        items: texts
-      });
+    if (texts.length) {
+      out.push({ name: matchedName, href, items: texts });
     }
   }
 
   return {
     rows: out,
-    logoNames,
     groupCount: groups.size,
     diagnostics: {
-      logoCount: logoNames.length,
-      usableLogoCount: usableNames.length,
       programGroupCount: groups.size,
       mappedGroupCount: out.length,
-      sampleLogos: logoNames.slice(0, 8),
-      sampleGroups: entries.slice(0, 5).map(
-        ([href, items]) => ({
-          href,
-          firstProgram: items[0].text
-        })
-      )
+      unmappedGroupCount: unmapped.length,
+      unmappedSamples: unmapped.slice(0, 10)
     }
   };
 }"""
@@ -421,6 +377,19 @@ def collect_all(page, today):
 
             extracted = page.evaluate(EXTRACT_JS)
             rows = extracted.get("rows", [])
+            diagnostics = extracted.get("diagnostics", {})
+
+            if diagnostics.get("unmappedGroupCount", 0):
+                print(
+                    f"  EŞLEŞMEYEN PROGRAM GRUBU: "
+                    f"{diagnostics.get('unmappedGroupCount')} / "
+                    f"{diagnostics.get('programGroupCount')}"
+                )
+                for sample in diagnostics.get("unmappedSamples", [])[:3]:
+                    print(
+                        "    Eşleşmedi:",
+                        sample.get("firstProgram", "")
+                    )
 
             if not rows:
                 print(
@@ -429,7 +398,7 @@ def collect_all(page, today):
                 )
                 print(
                     "  Tanılama:",
-                    extracted.get("diagnostics", {})
+                    diagnostics
                 )
                 continue
 
