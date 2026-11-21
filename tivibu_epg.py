@@ -614,12 +614,34 @@ def collect_all(page, today):
                     GET_PROGRAMS_JS
                 )
 
+                # DEBUG 1: Sayfadaki toplam program bağlantısı
+                print(
+                    f"    DEBUG: Sayfadaki toplam program: "
+                    f"{len(raw_programs)}"
+                )
+
+                # DEBUG 2: Program bağlantılarında bulunan kanal ID'leri
+                found_ids = list(dict.fromkeys(
+                    item["channel_id"]
+                    for item in raw_programs
+                ))
+
+                print(
+                    "    DEBUG: Bulunan kanal ID'leri: "
+                    + str(found_ids[:10])
+                )
+
                 matched = [
                     item
                     for item in raw_programs
                     if item["channel_id"].lower()
                     == channel_id.lower()
                 ]
+
+                print(
+                    f"    DEBUG: Seçilen kanal ID eşleşmesi: "
+                    f"{len(matched)}"
+                )
 
                 programs = assign_program_times(
                     matched,
@@ -820,6 +842,7 @@ def main():
     print("Yalnızca TÜM KANALLAR")
     print("Kanal kartları tek tek seçilecek.")
     print("Tarihler JavaScript element.click() ile seçilecek.")
+    print("DEBUG: Program bağlantıları ve kanal ID'leri gösterilecek.")
     print("Programlar: programTitle / startTime / finishTime")
     print("=" * 68)
 
