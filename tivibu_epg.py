@@ -58,81 +58,90 @@ EXTRACT_JS = r"""() => {
   const norm = s => (s || '').replace(/\s+/g, ' ').trim();
   const anchors = [...document.querySelectorAll('a')];
   const groups = new Map();
-
-  // Program bağlantılarını URL bazında grupla.
-  // Kanal adı tahmin edilmez; her grup kendi kartındaki logo ile eşleştirilir.
-  for (const a of anchors) {
-    const text = norm(a.innerText || a.textContent);
-    if (!a.href || !timeRe.test(text)) continue;
-
-    if (!groups.has(a.href)) groups.set(a.href, []);
-    groups.get(a.href).push({ text, element: a });
-  }
-
-  const out = [];
   const unmapped = [];
-  const entries = [...groups.entries()];
 
-  for (const [href, items] of entries) {
-    const first = items[0].element;
-    let node = first;
-    let matchedName = '';
-    let matchedNode = null;
+  // Eski çalışan betikteki yöntem korunur:
+  // Kanal adı /kanallar/ bağlantısının kendi metninden alınır.
+  // Program kartındaki resim alt metninden kanal adı tahmin edilmez.
+  for (const programAnchor of anchors) {
+    const programText = norm(programAnchor.innerText || programAnchor.textContent);
+    if (!programAnchor.href || !timeRe.test(programText)) continue;
 
-    // Program bağlantısından yukarı çıkarak kanal logosunu ara.
-    // Önceki sürümde 18 seviye sınırı ve tek URL şartı eşleşmeyi engelliyordu.
+    let node = programAnchor;
+    let channelHref = '';
+    let channelName = '';
+
+    // Program bağlantısının üst elemanlarında en yakın tek kanal
+    // bağlantısını ara. Birden fazla kanal içeren üst kapsayıcıları kullanma.
     for (let depth = 0; depth < 35 && node; depth++, node = node.parentElement) {
-      const logos = [...node.querySelectorAll('img[alt]')]
-        .map(img => norm(img.getAttribute('alt')))
-        .filter(alt => /^Kanal\s*:/i.test(alt));
+      const channelLinks = [...node.querySelectorAll('a[href]')]
+        .filter(a => {
+          try {
+            const u = new URL(a.href, location.href);
+            return u.pathname.toLowerCase().includes('/kanallar/');
+          } catch (_) {
+            return false;
+          }
+        });
 
-      // Aynı kapsayıcı içinde farklı program bağlantıları olabilir.
-      // URL sayısı artık tek olmak zorunda değil.
-      // Ancak kanal logosu tek ve benzersiz olmalı.
-      const uniqueLogos = [...new Set(logos)];
+      const unique = new Map();
+      for (const link of channelLinks) {
+        const href = link.href.split('#')[0];
+        const name = norm(link.innerText || link.textContent) ||
+          norm(link.querySelector('img[alt]')?.getAttribute('alt'))
+            .replace(/^Kanal\s*:\s*/i, '');
+        if (href && name) unique.set(href, { href, name });
+      }
 
-      if (uniqueLogos.length === 1) {
-        matchedName = uniqueLogos[0].replace(/^Kanal\s*:\s*/i, '').trim();
-        matchedNode = node;
+      if (unique.size === 1) {
+        const match = [...unique.values()][0];
+        channelHref = match.href;
+        channelName = match.name;
         break;
       }
     }
 
-    // Sıra bazlı isim ataması yapılmaz.
-    // Eşleşme kesin değilse grup atlanır.
-    if (!matchedName) {
+    if (!channelHref || !channelName) {
       unmapped.push({
-        href,
-        firstProgram: items[0].text,
-        itemCount: items.length
+        href: programAnchor.href,
+        firstProgram: programText,
+        reason: 'Üst kartta tek bir /kanallar/ bağlantısı bulunamadı'
       });
       continue;
     }
 
-    // Aynı kanal bağlantısına ait programları al.
-    const cardLinks = [...matchedNode.querySelectorAll('a')].filter(a =>
-      a.href === href && timeRe.test(norm(a.innerText || a.textContent))
-    );
+    if (!groups.has(channelHref)) {
+      groups.set(channelHref, {
+        name: channelName,
+        items: [],
+        seen: new Set()
+      });
+    }
 
-    const texts = cardLinks
-      .map(a => norm(a.innerText || a.textContent))
-      .filter(Boolean);
+    const group = groups.get(channelHref);
+    if (!group.seen.has(programText)) {
+      group.seen.add(programText);
+      group.items.push(programText);
+    }
+  }
 
-    if (texts.length) {
-      out.push({
-        name: matchedName,
+  const rows = [];
+  for (const [href, group] of groups.entries()) {
+    if (group.items.length) {
+      rows.push({
+        name: group.name,
         href,
-        items: texts
+        items: group.items
       });
     }
   }
 
   return {
-    rows: out,
-    groupCount: groups.size,
+    rows,
+    groupCount: groups.size + unmapped.length,
     diagnostics: {
-      programGroupCount: groups.size,
-      mappedGroupCount: out.length,
+      programGroupCount: groups.size + unmapped.length,
+      mappedGroupCount: rows.length,
       unmappedGroupCount: unmapped.length,
       unmappedSamples: unmapped.slice(0, 10)
     }
@@ -394,7 +403,6 @@ def collect_all(page, today):
                     f"{diagnostics.get('unmappedGroupCount')} / "
                     f"{diagnostics.get('programGroupCount')}"
                 )
-
                 for sample in diagnostics.get("unmappedSamples", [])[:3]:
                     print(
                         "    Eşleşmedi:",
