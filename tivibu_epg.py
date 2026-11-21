@@ -1,5 +1,3 @@
-# tivibu_epg.py
-
 import re
 import os
 from datetime import datetime, timedelta
@@ -17,13 +15,62 @@ TIMEZONE = ZoneInfo("Europe/Istanbul")
 DAYS = 7
 
 
-EXTRACT_JS = r"""
+EXTRACT_CHANNEL_JS = r"""
+(channelId) => {
+    const clean = value =>
+        (value || "").replace(/\s+/g, " ").trim();
+
+    const programs = [];
+    const seen = new Set();
+
+    document.querySelectorAll('a[href*="/rv?"]').forEach(link => {
+        const title = clean(
+            link.querySelector(".programTitle")?.innerText
+        );
+        const start = clean(
+            link.querySelector(".startTime")?.innerText
+        );
+        const finish = clean(
+            link.querySelector(".finishTime")?.innerText
+        );
+        const type = clean(
+            link.querySelector(".programType .type")?.innerText
+        );
+
+        const href = link.getAttribute("href") || "";
+        const match = href.match(/ch\d+/i);
+
+        if (!match || !title || !start || !finish) return;
+
+        if (match[0].toLowerCase() !== channelId.toLowerCase()) {
+            return;
+        }
+
+        const key = [title, start, finish].join("|");
+
+        if (seen.has(key)) return;
+        seen.add(key);
+
+        programs.push({
+            channelId: match[0],
+            title,
+            start,
+            finish,
+            type
+        });
+    });
+
+    return programs;
+}
+"""
+
+EXTRACT_CHANNELS_JS = r"""
 () => {
     const clean = value =>
         (value || "").replace(/\s+/g, " ").trim();
 
     const channels = [];
-    const channelMap = new Map();
+    const seen = new Set();
 
     document.querySelectorAll(".fullLink[channelcode]").forEach(card => {
         const id = clean(card.getAttribute("channelcode"));
@@ -33,49 +80,13 @@ EXTRACT_JS = r"""
             card.getAttribute("title")
         );
 
-        if (!id || !name) return;
+        if (!id || !name || seen.has(id)) return;
 
-        if (!channelMap.has(id)) {
-            channelMap.set(id, true);
-            channels.push({id, name});
-        }
+        seen.add(id);
+        channels.push({id, name});
     });
 
-    const programs = [];
-    const seen = new Set();
-
-    document.querySelectorAll('a[href*="/rv?"]').forEach(link => {
-        const title = clean(link.querySelector(".programTitle")?.innerText);
-        const start = clean(link.querySelector(".startTime")?.innerText);
-        const finish = clean(link.querySelector(".finishTime")?.innerText);
-        const type = clean(link.querySelector(".programType .type")?.innerText);
-
-        const href = link.getAttribute("href") || "";
-        const match = href.match(/ch\d+/i);
-
-        if (!match || !title || !start || !finish) return;
-
-        const channelId = match[0];
-        const key = [channelId, title, start, finish].join("|");
-
-        if (seen.has(key)) return;
-        seen.add(key);
-
-        programs.push({
-            channelId,
-            title,
-            start,
-            finish,
-            type
-        });
-    });
-
-    return {
-        channelCards: document.querySelectorAll(".fullLink[channelcode]").length,
-        channels,
-        programLinks: document.querySelectorAll('a[href*="/rv?"]').length,
-        programs
-    };
+    return channels;
 }
 """
 
@@ -120,7 +131,8 @@ def install_popup_blocker(context):
                 ".ins-preview-wrapper",
                 "#ins-frameless-overlay",
                 '[id^="ins-frame"]',
-                '[class*="ins-preview-wrapper"]'
+                '[class*="ins-preview-wrapper"]',
+                '[class*="ins-webpush"]'
             ].forEach(selector => {
                 document.querySelectorAll(selector).forEach(el => el.remove());
             });
@@ -130,20 +142,25 @@ def install_popup_blocker(context):
 
         const start = () => {
             if (!document.documentElement) return;
+
             observer.observe(document.documentElement, {
                 childList: true,
                 subtree: true
             });
+
             removeInsider();
         };
 
-        if (document.documentElement) start();
-        else document.addEventListener("DOMContentLoaded", start);
+        if (document.documentElement) {
+            start();
+        } else {
+            document.addEventListener("DOMContentLoaded", start);
+        }
     })();
     """)
 
 
-def wait_page(page, milliseconds=1500):
+def wait_page(page, milliseconds=1200):
     try:
         page.wait_for_load_state("domcontentloaded", timeout=5000)
     except Exception:
@@ -155,6 +172,7 @@ def wait_page(page, milliseconds=1500):
 
 def parse_time(value):
     match = re.search(r"(\d{1,2}):(\d{2})", value or "")
+
     if not match:
         return None
 
@@ -169,6 +187,7 @@ def parse_time(value):
 
 def make_datetime(day, value):
     parsed = parse_time(value)
+
     if not parsed:
         return None
 
@@ -185,51 +204,55 @@ def make_datetime(day, value):
 
 
 def select_date(page, target_date):
-    """
-    Tarih bağlantılarının farklı HTML biçimlerini kontrol eder.
-    Önce tarih değerlerini arar, ardından görünen tarih metinlerini dener.
-    """
-
     target_iso = target_date.strftime("%Y-%m-%d")
     target_dot = target_date.strftime("%d.%m.%Y")
     target_slash = target_date.strftime("%d/%m/%Y")
 
     close_overlays(page)
 
-    # Sayfadaki tarih bağlantılarının mevcut HTML bilgilerini al.
     try:
-        date_elements = page.locator(
-            "a[channeldatebegin], a[channeldateend], "
+        elements = page.locator(
             "[channeldatebegin], [channeldateend]"
         )
 
-        count = date_elements.count()
+        count = elements.count()
 
         for index in range(count):
-            element = date_elements.nth(index)
+            element = elements.nth(index)
 
             try:
-                begin = element.get_attribute("channeldatebegin") or ""
-                end = element.get_attribute("channeldateend") or ""
+                begin = element.get_attribute(
+                    "channeldatebegin"
+                ) or ""
+
+                end = element.get_attribute(
+                    "channeldateend"
+                ) or ""
+
                 label = normalize(element.inner_text())
                 value = begin + " " + end
 
-                if (
-                    target_iso in value or
-                    target_dot in value or
-                    target_slash in value or
-                    target_dot in label or
-                    target_slash in label
-                ):
-                    if "active" in (element.get_attribute("class") or "").lower():
-                        return True
+                matches = (
+                    target_iso in value
+                    or target_dot in value
+                    or target_slash in value
+                    or target_dot in label
+                    or target_slash in label
+                )
 
-                    try:
-                        element.evaluate("(el) => el.click()")
-                        wait_page(page, 1800)
-                        return True
-                    except Exception:
-                        continue
+                if not matches:
+                    continue
+
+                classes = (
+                    element.get_attribute("class") or ""
+                ).lower()
+
+                if "active" in classes:
+                    return True
+
+                element.evaluate("(el) => el.click()")
+                wait_page(page, 1500)
+                return True
 
             except Exception:
                 continue
@@ -237,14 +260,12 @@ def select_date(page, target_date):
     except Exception:
         pass
 
-    # Alternatif: tarih butonları veya bağlantılarının metninden seç.
     try:
-        candidates = page.locator("a, button, [role='button']")
-
-        count = candidates.count()
+        elements = page.locator("a, button, [role='button']")
+        count = elements.count()
 
         for index in range(count):
-            element = candidates.nth(index)
+            element = elements.nth(index)
 
             try:
                 if not element.is_visible():
@@ -254,7 +275,7 @@ def select_date(page, target_date):
 
                 if target_dot in label or target_slash in label:
                     element.evaluate("(el) => el.click()")
-                    wait_page(page, 1800)
+                    wait_page(page, 1500)
                     return True
 
             except Exception:
@@ -263,47 +284,82 @@ def select_date(page, target_date):
     except Exception:
         pass
 
-    # Tarih seçicinin HTML yapısını logla.
-    try:
-        diagnostic = page.evaluate("""
-        () => Array.from(document.querySelectorAll(
-            '[channeldatebegin], [channeldateend], a, button'
-        )).slice(0, 50).map(el => ({
-            tag: el.tagName,
-            text: (el.innerText || '').trim().slice(0, 80),
-            begin: el.getAttribute('channeldatebegin'),
-            end: el.getAttribute('channeldateend'),
-            cls: el.className?.toString().slice(0, 100)
-        }))
-        """)
-        log(f"Tarih seçici bulunamadı. Sayfa elemanları: {diagnostic}")
-    except Exception:
-        pass
-
     return False
 
 
-def extract_page(page):
+def get_channels(page):
     close_overlays(page)
 
     try:
-        return page.evaluate(EXTRACT_JS)
+        return page.evaluate(EXTRACT_CHANNELS_JS)
     except Exception as error:
-        log(f"Veri okuma hatası: {error}")
-        return {
-            "channelCards": 0,
-            "channels": [],
-            "programLinks": 0,
-            "programs": []
+        log(f"Kanal listesi okunamadı: {error}")
+        return []
+
+
+def open_channel_and_read_programs(page, channel):
+    channel_id = normalize(channel["id"])
+    channel_name = normalize(channel["name"])
+
+    close_overlays(page)
+
+    try:
+        card = page.locator(
+            f'.fullLink[channelcode="{channel_id}"]'
+        ).first
+
+        card.scroll_into_view_if_needed(timeout=5000)
+
+        opened = card.evaluate("""
+        (card) => {
+            const icon = card.querySelector(".openIcon");
+
+            if (icon) {
+                icon.click();
+                return "openIcon";
+            }
+
+            card.click();
+            return "card";
         }
+        """)
+
+        log(f"  Açıldı: {channel_name} ({opened})")
+
+    except Exception as error:
+        log(f"  Kanal açılamadı: {channel_name}: {error}")
+        return []
+
+    close_overlays(page)
+    page.wait_for_timeout(350)
+
+    try:
+        programs = page.evaluate(
+            EXTRACT_CHANNEL_JS,
+            channel_id
+        )
+
+        if not programs:
+            page.wait_for_timeout(650)
+
+            programs = page.evaluate(
+                EXTRACT_CHANNEL_JS,
+                channel_id
+            )
+
+        log(f"  Program sayısı: {len(programs)}")
+
+        return programs
+
+    except Exception as error:
+        log(f"  Program okunamadı: {channel_name}: {error}")
+        return []
 
 
 def collect_day(page, day, channels, all_programs):
     log("")
-    log("-" * 65)
+    log("=" * 65)
     log(f"TARİH: {day.strftime('%d.%m.%Y')}")
-
-    close_overlays(page)
 
     try:
         page.goto(
@@ -315,11 +371,12 @@ def collect_day(page, day, channels, all_programs):
         log(f"Sayfa açılamadı: {error}")
         return
 
-    wait_page(page, 2500)
+    wait_page(page, 2000)
 
-    # Kanalların ve sayfa içeriğinin yüklenmesini bekle.
     try:
-        page.locator(".fullLink[channelcode]").first.wait_for(
+        page.locator(
+            ".fullLink[channelcode]"
+        ).first.wait_for(
             state="attached",
             timeout=20000
         )
@@ -328,11 +385,10 @@ def collect_day(page, day, channels, all_programs):
 
     close_overlays(page)
 
-    # Sayfa aşağı kaydırılarak tüm kanal kartları yüklenir.
     previous_count = -1
     stable_count = 0
 
-    for _ in range(20):
+    for _ in range(25):
         close_overlays(page)
 
         try:
@@ -359,50 +415,65 @@ def collect_day(page, day, channels, all_programs):
         except Exception:
             pass
 
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(350)
 
-    # Kanal bilgilerini al.
-    data = extract_page(page)
+    try:
+        page.evaluate("window.scrollTo(0, 0)")
+    except Exception:
+        pass
 
-    log(f"Kanal kartı: {data['channelCards']}")
-    log(f"Program bağlantısı: {data['programLinks']}")
+    wait_page(page, 500)
 
-    for channel in data["channels"]:
+    day_channels = get_channels(page)
+
+    log(f"Bulunan kanal kartı: {len(day_channels)}")
+
+    for channel in day_channels:
         channel_id = normalize(channel["id"])
         channel_name = normalize(channel["name"])
 
         if channel_id and channel_name:
-            if channel_id not in channels:
-                channels[channel_id] = channel_name
-                log(f"Yeni kanal: {channel_name} ({channel_id})")
+            channels[channel_id] = channel_name
 
-    # Tarihi seç.
-    if not select_date(page, day):
-        log("Tarih seçilemedi; bu günün programları atlandı.")
+    if not day_channels:
+        log("Bu tarihte kanal kartı bulunamadı.")
         return
 
-    # Tarih değiştikten sonra programları tekrar oku.
-    data = extract_page(page)
+    if not select_date(page, day):
+        log("Tarih seçilemedi; bu gün atlandı.")
+        return
 
-    added = 0
+    log("Tarih seçildi. Kanallar tek tek açılıyor.")
 
-    for program in data["programs"]:
-        channel_id = normalize(program["channelId"])
+    day_count = 0
 
-        if channel_id not in channels:
-            continue
+    for index, channel in enumerate(day_channels, start=1):
+        channel_name = normalize(channel["name"])
 
-        item = dict(program)
-        item["date"] = day
-        all_programs.append(item)
-        added += 1
+        log(
+            f"[{index}/{len(day_channels)}] "
+            f"{channel_name}"
+        )
 
-    log(f"Okunan program: {len(data['programs'])}")
-    log(f"Eklenen program: {added}")
+        programs = open_channel_and_read_programs(
+            page,
+            channel
+        )
+
+        for program in programs:
+            program["date"] = day
+            all_programs.append(program)
+            day_count += 1
+
+    log(
+        f"{day.strftime('%d.%m.%Y')} toplam program: "
+        f"{day_count}"
+    )
 
 
 def build_xml(channels, programs):
     tv = ET.Element("tv")
+
     tv.set("source-info-name", "Tivibu")
     tv.set("generator-info-name", "Tivibu 7 Günlük EPG")
 
@@ -417,10 +488,12 @@ def build_xml(channels, programs):
             channel_element,
             "display-name"
         )
+
         display_name.text = channel_name
 
     seen = set()
     valid_count = 0
+    channel_program_counts = {}
 
     for program in programs:
         channel_id = normalize(program.get("channelId"))
@@ -433,8 +506,15 @@ def build_xml(channels, programs):
         if not title or not day:
             continue
 
-        start_dt = make_datetime(day, program.get("start"))
-        finish_dt = make_datetime(day, program.get("finish"))
+        start_dt = make_datetime(
+            day,
+            program.get("start")
+        )
+
+        finish_dt = make_datetime(
+            day,
+            program.get("finish")
+        )
 
         if not start_dt or not finish_dt:
             continue
@@ -445,7 +525,12 @@ def build_xml(channels, programs):
         start_xml = start_dt.strftime("%Y%m%d%H%M%S %z")
         stop_xml = finish_dt.strftime("%Y%m%d%H%M%S %z")
 
-        key = (channel_id, start_xml, stop_xml, title)
+        key = (
+            channel_id,
+            start_xml,
+            stop_xml,
+            title
+        )
 
         if key in seen:
             continue
@@ -467,9 +552,12 @@ def build_xml(channels, programs):
             "title",
             {"lang": "tr"}
         )
+
         title_element.text = title
 
-        program_type = normalize(program.get("type"))
+        program_type = normalize(
+            program.get("type")
+        )
 
         if program_type:
             category = ET.SubElement(
@@ -477,9 +565,32 @@ def build_xml(channels, programs):
                 "category",
                 {"lang": "tr"}
             )
+
             category.text = program_type
 
         valid_count += 1
+
+        channel_program_counts[channel_id] = (
+            channel_program_counts.get(channel_id, 0) + 1
+        )
+
+    log("")
+    log("KANAL BAZLI PROGRAM KONTROLÜ")
+    log("-" * 65)
+
+    channels_without_programs = []
+
+    for channel_id, channel_name in sorted(channels.items()):
+        count = channel_program_counts.get(channel_id, 0)
+
+        log(f"{channel_name}: {count} program")
+
+        if count == 0:
+            channels_without_programs.append(channel_name)
+
+    log("-" * 65)
+    log(f"Programı olan kanal: {len(channel_program_counts)}")
+    log(f"Programı olmayan kanal: {len(channels_without_programs)}")
 
     return tv, valid_count
 
@@ -509,10 +620,9 @@ def save_xml(root):
 def main():
     log("=" * 65)
     log("TIVIBU 7 GÜNLÜK EPG")
-    log("Yalnızca TÜM KANALLAR kategorisi kullanılacak.")
-    log("Kanal ID: .fullLink[channelcode]")
-    log("Kanal adı: .channelsTitle")
-    log("Program: .programTitle / .startTime / .finishTime")
+    log("Yalnızca TÜM KANALLAR kategorisi")
+    log("Her kanalın .openIcon düğmesiyle program listesi açılıyor.")
+    log("Programlar kanal ID'sine göre ayrı ayrı okunuyor.")
     log("=" * 65)
 
     channels = {}
@@ -545,7 +655,10 @@ def main():
         page = context.new_page()
         page.set_default_timeout(15000)
 
-        page.on("dialog", lambda dialog: dialog.dismiss())
+        page.on(
+            "dialog",
+            lambda dialog: dialog.dismiss()
+        )
 
         for offset in range(DAYS):
             day = today + timedelta(days=offset)
@@ -568,6 +681,8 @@ def main():
     log("=" * 65)
     log(f"Toplam kanal: {len(channels)}")
     log(f"Toplam program: {program_count}")
+    log(f"Toplam gün: {DAYS}")
+    log("=" * 65)
 
     if len(channels) < 30:
         raise RuntimeError(
