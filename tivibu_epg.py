@@ -2,10 +2,11 @@
 import re
 import html
 import time
-import os
 import unicodedata
+import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from urllib.parse import urljoin
 from xml.etree import ElementTree as ET
 
 from playwright.sync_api import (
@@ -27,7 +28,7 @@ ISTANBUL = ZoneInfo("Europe/Istanbul")
 DAYS = 7
 PAGE_TIMEOUT = 60000
 PAGE_WAIT_MS = 2200
-DATE_WAIT_MS = 2500
+DATE_WAIT_MS = 1800
 
 MIN_CHANNELS = 10
 MIN_PROGRAMS = 100
@@ -37,259 +38,227 @@ BAD_CHANNELS = {
     "BENİM KANALIM",
     "FAVORİ KANALLARIM",
     "TİVİBU TANITIM SAYFASI",
+    "TİVİBU CANLI TV, KANAL VE PROGRAMLAR",
+    "TİVİBU NEDİR?",
 }
 
 TIME_RE = re.compile(
-    r"(?P<sh>\d{1,2}):(?P<sm>\d{2})"
-    r"\s*(?:→|➜|[-–])\s*"
+    r"(?P<sh>\d{1,2}):(?P<sm>\d{2})\s*(?:→|➜|[-–])\s*"
     r"(?P<eh>\d{1,2}):(?P<em>\d{2})"
 )
 
 CATEGORY_RE = re.compile(
-    r"\s+(?:Yaşam|Film|Dizi|Spor|Haber|Çocuk|Müzik|"
-    r"Belgesel|Sinema|Ulusal|Global|Diğer|Aktüalite|"
-    r"Spor Programı)\s*[-–]?\s*$",
+    r"\s+(?:Yaşam|Film|Dizi|Spor|Haber|Çocuk|Müzik|Belgesel|Sinema|"
+    r"Ulusal|Global|Diğer|Aktüalite|Spor Programı)\s*[-–]?\s*$",
     re.IGNORECASE
 )
 
 
 # ============================================================
-# KANAL - PROGRAM EŞLEŞTİRME
+# KANAL KARTI ÜZERİNDEN PROGRAM EŞLEŞTİRME
 #
-# 1. Program bağlantıları bulunur.
-# 2. Kanal bağlantıları ayrı listelenir.
-# 3. Her program için DOM ağacındaki en yakın kanal bağlantısı
-#    hesaplanır.
-# 4. Programlar kanal adresine göre gruplanır.
+# ÖNEMLİ:
+# Her kanal bağlantısı ayrı ayrı ele alınır.
+# Kanal bağlantısının üst kapsayıcıları taranır.
+# İçinde başka kanal bağlantısı olmayan en yakın kapsayıcıdaki
+# saatli program bağlantıları o kanala bağlanır.
+#
+# Önceki DOM yakınlığı yöntemi kullanılmaz.
 # ============================================================
 
-EXTRACT_JS = r"""
-() => {
+EXTRACT_JS = r"""() => {
     const timeRe =
         /\d{1,2}:\d{2}\s*(?:→|➜|[-–])\s*\d{1,2}:\d{2}/;
 
     const norm = value =>
         (value || "").replace(/\s+/g, " ").trim();
 
-    const allAnchors = [
-        ...document.querySelectorAll("a[href]")
+    const channelAnchors = [
+        ...document.querySelectorAll('a[href*="/kanallar/"]')
     ];
 
-    const channelLinks = [];
-    const programAnchors = [];
+    const rows = [];
+    const seenChannels = new Set();
 
-    for (let index = 0; index < allAnchors.length; index++) {
-        const a = allAnchors[index];
+    const diagnostics = {
+        channelAnchors: channelAnchors.length,
+        mapped: 0,
+        unmapped: 0,
+        timeElements: 0,
+        samples: []
+    };
 
-        let url;
+    for (const channelAnchor of channelAnchors) {
+        let channelHref = "";
 
         try {
-            url = new URL(a.href, location.href);
+            const url = new URL(
+                channelAnchor.href,
+                location.href
+            );
+
+            if (
+                !url.pathname.toLowerCase().includes("/kanallar/")
+            ) {
+                continue;
+            }
+
+            channelHref =
+                url.origin +
+                url.pathname.replace(/\/+$/, "");
+
         } catch (_) {
             continue;
         }
 
         if (
-            url.pathname.toLowerCase().includes("/kanallar/")
+            !channelHref ||
+            seenChannels.has(channelHref)
         ) {
-            let name = norm(
-                a.innerText || a.textContent
-            );
+            continue;
+        }
 
-            if (!name) {
-                const img = a.querySelector("img[alt]");
+        let channelName = norm(
+            channelAnchor.innerText ||
+            channelAnchor.textContent
+        );
 
-                if (img) {
-                    name = norm(
-                        img.getAttribute("alt")
+        if (!channelName) {
+            const image = channelAnchor.querySelector("img[alt]");
+
+            if (image) {
+                channelName = norm(
+                    image.getAttribute("alt")
+                );
+            }
+        }
+
+        channelName = channelName
+            .replace(/^Kanal\s*:\s*/i, "")
+            .trim();
+
+        if (!channelName) {
+            continue;
+        }
+
+        let node = channelAnchor;
+        let chosenPrograms = null;
+        let chosenDepth = -1;
+
+        // Kanal kartının en yakın uygun kapsayıcısını bul.
+        for (
+            let depth = 0;
+            depth < 35 && node;
+            depth++, node = node.parentElement
+        ) {
+            const links = [
+                ...node.querySelectorAll("a[href]")
+            ];
+
+            const channelLinks = new Set();
+
+            for (const link of links) {
+                try {
+                    const url = new URL(
+                        link.href,
+                        location.href
                     );
+
+                    if (
+                        url.pathname
+                            .toLowerCase()
+                            .includes("/kanallar/")
+                    ) {
+                        channelLinks.add(
+                            url.origin +
+                            url.pathname.replace(/\/+$/, "")
+                        );
+                    }
+                } catch (_) {
                 }
             }
 
-            name = name
-                .replace(/^Kanal\s*:\s*/i, "")
-                .trim();
+            // Birden fazla kanal içeren ortak kapsayıcıyı kullanma.
+            if (channelLinks.size > 1) {
+                continue;
+            }
 
-            if (name) {
-                channelLinks.push({
-                    element: a,
-                    href: url.origin +
-                        url.pathname.replace(/\/+$/, ""),
-                    name,
-                    index
+            const programs = links.filter(link => {
+                const text = norm(
+                    link.innerText ||
+                    link.textContent
+                );
+
+                return timeRe.test(text);
+            });
+
+            if (programs.length > 0) {
+                chosenPrograms = programs;
+                chosenDepth = depth;
+                break;
+            }
+        }
+
+        if (
+            !chosenPrograms ||
+            chosenPrograms.length === 0
+        ) {
+            diagnostics.unmapped++;
+
+            if (diagnostics.samples.length < 10) {
+                diagnostics.samples.push({
+                    name: channelName,
+                    href: channelHref,
+                    reason: "Kanal kartında saatli program bulunamadı"
                 });
             }
+
+            continue;
         }
 
-        const text = norm(
-            a.innerText || a.textContent
-        );
+        const items = [];
+        const seenItems = new Set();
 
-        if (timeRe.test(text)) {
-            programAnchors.push({
-                element: a,
-                text,
-                index
-            });
-        }
-    }
-
-    // DOM ağacındaki iki eleman arasındaki mesafe.
-    function domDistance(a, b) {
-        const ancestors = new Map();
-
-        let node = a;
-        let depth = 0;
-
-        while (node) {
-            ancestors.set(node, depth++);
-            node = node.parentElement;
-        }
-
-        node = b;
-        depth = 0;
-
-        while (node) {
-            if (ancestors.has(node)) {
-                return ancestors.get(node) + depth;
-            }
-
-            depth++;
-            node = node.parentElement;
-        }
-
-        return 999999;
-    }
-
-    const groups = new Map();
-
-    const diagnostics = {
-        totalAnchors: allAnchors.length,
-        channelAnchors: channelLinks.length,
-        programAnchors: programAnchors.length,
-        mappedPrograms: 0,
-        unmappedPrograms: 0,
-        mappedChannels: 0,
-        distanceCounts: {},
-        samples: []
-    };
-
-    // Aynı adresin tekrar eden bağlantılarını temizle.
-    const uniqueChannels = new Map();
-
-    for (const channel of channelLinks) {
-        if (!uniqueChannels.has(channel.href)) {
-            uniqueChannels.set(
-                channel.href,
-                channel
-            );
-        }
-    }
-
-    const channels = [
-        ...uniqueChannels.values()
-    ];
-
-    for (const program of programAnchors) {
-        let best = null;
-        let bestDistance = Infinity;
-        let bestIndexDistance = Infinity;
-
-        for (const channel of channels) {
-            const distance = domDistance(
-                program.element,
-                channel.element
-            );
-
-            const indexDistance = Math.abs(
-                program.index - channel.index
+        for (const programAnchor of chosenPrograms) {
+            const text = norm(
+                programAnchor.innerText ||
+                programAnchor.textContent
             );
 
             if (
-                distance < bestDistance ||
-                (
-                    distance === bestDistance &&
-                    indexDistance < bestIndexDistance
-                )
+                text &&
+                timeRe.test(text) &&
+                !seenItems.has(text)
             ) {
-                best = channel;
-                bestDistance = distance;
-                bestIndexDistance = indexDistance;
+                seenItems.add(text);
+                items.push(text);
             }
         }
 
-        if (!best || bestDistance >= 999999) {
-            diagnostics.unmappedPrograms++;
+        diagnostics.timeElements += items.length;
 
-            if (diagnostics.samples.length < 10) {
-                diagnostics.samples.push({
-                    program: program.text,
-                    reason: "Yakın kanal bağlantısı bulunamadı"
-                });
-            }
-
+        if (!items.length) {
+            diagnostics.unmapped++;
             continue;
         }
 
-        // Çok uzak eşleşmeleri kabul etme.
-        if (bestDistance > 30) {
-            diagnostics.unmappedPrograms++;
+        seenChannels.add(channelHref);
 
-            if (diagnostics.samples.length < 10) {
-                diagnostics.samples.push({
-                    program: program.text,
-                    reason: "Kanal bağlantısı DOM olarak çok uzakta",
-                    distance: bestDistance
-                });
-            }
-
-            continue;
-        }
-
-        diagnostics.distanceCounts[bestDistance] =
-            (diagnostics.distanceCounts[bestDistance] || 0) + 1;
-
-        if (!groups.has(best.href)) {
-            groups.set(
-                best.href,
-                {
-                    name: best.name,
-                    href: best.href,
-                    items: [],
-                    seen: new Set()
-                }
-            );
-        }
-
-        const group = groups.get(best.href);
-
-        if (!group.seen.has(program.text)) {
-            group.seen.add(program.text);
-            group.items.push(program.text);
-            diagnostics.mappedPrograms++;
-        }
+        rows.push({
+            name: channelName,
+            href: channelHref,
+            items,
+            depth: chosenDepth
+        });
     }
 
-    const rows = [];
-
-    for (const group of groups.values()) {
-        if (group.items.length) {
-            rows.push({
-                name: group.name,
-                href: group.href,
-                items: group.items
-            });
-        }
-    }
-
-    diagnostics.mappedChannels = rows.length;
+    diagnostics.mapped = rows.length;
 
     return {
         rows,
         diagnostics
     };
-}
-"""
+}"""
 
 
 # ============================================================
@@ -306,6 +275,14 @@ def clean_text(value):
         " ",
         value
     ).strip()
+
+
+def normalize_name(value):
+    return clean_text(value).upper()
+
+
+def is_bad_channel(name):
+    return normalize_name(name) in BAD_CHANNELS
 
 
 def slugify(value):
@@ -338,8 +315,9 @@ def slugify(value):
     )
 
     value = "".join(
-        c for c in value
-        if not unicodedata.combining(c)
+        char
+        for char in value
+        if not unicodedata.combining(char)
     ).lower()
 
     value = re.sub(
@@ -364,12 +342,8 @@ def unique_id(name, used):
     return result
 
 
-def is_bad_channel(name):
-    return clean_text(name).upper() in BAD_CHANNELS
-
-
 # ============================================================
-# PROGRAM PARSE
+# PROGRAM SATIRI PARSE
 # ============================================================
 
 def parse_program_line(line):
@@ -395,13 +369,20 @@ def parse_program_line(line):
         title
     ).strip(" -–")
 
+    title = re.sub(
+        r"\s+(?:Yaşam|Film|Dizi|Spor|Haber|Çocuk|Müzik|Belgesel|Sinema)\s*$",
+        "",
+        title,
+        flags=re.IGNORECASE
+    ).strip()
+
     if not title:
         return None
 
-    sh = int(match.group("sh"))
-    sm = int(match.group("sm"))
-    eh = int(match.group("eh"))
-    em = int(match.group("em"))
+    sh, sm, eh, em = (
+        int(match.group(key))
+        for key in ("sh", "sm", "eh", "em")
+    )
 
     if (
         sh > 23
@@ -482,10 +463,7 @@ def read_available_dates(page):
         if not begin or not end:
             continue
 
-        key = (
-            begin,
-            end
-        )
+        key = (begin, end)
 
         if key in seen:
             continue
@@ -501,9 +479,7 @@ def read_available_dates(page):
             "begin": begin,
             "end": end,
             "date": parsed.date(),
-            "text": clean_text(
-                record.get("text")
-            )
+            "text": clean_text(record.get("text"))
         })
 
     return sorted(
@@ -522,9 +498,7 @@ def build_target_dates(records, today):
     targets = []
 
     for offset in range(DAYS):
-        target_day = today + timedelta(
-            days=offset
-        )
+        target_day = today + timedelta(days=offset)
 
         if target_day not in available:
             raise RuntimeError(
@@ -600,13 +574,12 @@ def select_date_by_attributes(page, record):
             return
 
     raise RuntimeError(
-        "Tarih bağlantısı bulunamadı: "
-        + begin
+        "Tarih bağlantısı bulunamadı: " + begin
     )
 
 
 # ============================================================
-# SAATLERİ TARİHE DÖNÜŞTÜRME
+# PROGRAM SAATLERİNİ TARİHE DÖNÜŞTÜRME
 # ============================================================
 
 def assign_times(items, selected_day):
@@ -732,9 +705,7 @@ def collect_seven_days(page, today, date_records):
     )
 
     for offset, date_record in enumerate(date_records):
-        selected_day = today + timedelta(
-            days=offset
-        )
+        selected_day = today + timedelta(days=offset)
 
         label = date_label(
             selected_day,
@@ -759,59 +730,41 @@ def collect_seven_days(page, today, date_records):
                 date_record["begin"]
             )
 
-        extracted = page.evaluate(
-            EXTRACT_JS
-        )
+        extracted = page.evaluate(EXTRACT_JS)
 
-        rows = extracted.get(
-            "rows",
-            []
-        )
-
-        diagnostics = extracted.get(
-            "diagnostics",
-            {}
-        )
+        rows = extracted.get("rows", [])
+        diagnostics = extracted.get("diagnostics", {})
 
         print(
             "  HTML bağlantısı:",
-            diagnostics.get("totalAnchors", 0)
-        )
-
-        print(
-            "  Kanal bağlantısı:",
             diagnostics.get("channelAnchors", 0)
         )
 
         print(
-            "  Program bağlantısı:",
-            diagnostics.get("programAnchors", 0)
+            "  Eşleşen kanal kartı:",
+            diagnostics.get("mapped", 0)
         )
 
         print(
-            "  Eşleşen kanal:",
-            diagnostics.get("mappedChannels", 0)
+            "  Eşleşmeyen kanal kartı:",
+            diagnostics.get("unmapped", 0)
         )
 
         print(
-            "  Eşleşen program:",
-            diagnostics.get("mappedPrograms", 0)
+            "  Saat içeren program:",
+            diagnostics.get("timeElements", 0)
         )
-
-        print(
-            "  Eşleşmeyen program:",
-            diagnostics.get("unmappedPrograms", 0)
-        )
-
-        if diagnostics.get("distanceCounts"):
-            print(
-                "  DOM eşleşme mesafeleri:",
-                diagnostics["distanceCounts"]
-            )
 
         if not rows:
+            for sample in diagnostics.get("samples", [])[:5]:
+                print(
+                    "  Eşleşmeyen:",
+                    sample.get("name", ""),
+                    sample.get("reason", "")
+                )
+
             raise RuntimeError(
-                f"{label} için kanal/program eşleşmesi bulunamadı. "
+                f"{label} için kanal kartı bulunamadı. "
                 "Mevcut XML korunuyor."
             )
 
@@ -875,19 +828,8 @@ def collect_seven_days(page, today, date_records):
             offset == 0
             and len(rows) < MIN_CHANNELS
         ):
-            for sample in diagnostics.get(
-                "samples",
-                []
-            )[:5]:
-                print(
-                    "  Eşleşmeyen örnek:",
-                    sample.get("program", ""),
-                    "|",
-                    sample.get("reason", "")
-                )
-
             raise RuntimeError(
-                f"İlk gün yalnızca {len(rows)} kanal eşleşti. "
+                f"İlk gün yalnızca {len(rows)} kanal kartı eşleşti. "
                 f"En az {MIN_CHANNELS} bekleniyordu. "
                 "Mevcut XML korunuyor."
             )
@@ -937,17 +879,13 @@ def build_xml_bytes(channel_names, programs):
         channel = ET.SubElement(
             root,
             "channel",
-            {
-                "id": channel_ids[name]
-            }
+            {"id": channel_ids[name]}
         )
 
         display = ET.SubElement(
             channel,
             "display-name",
-            {
-                "lang": "tr"
-            }
+            {"lang": "tr"}
         )
 
         display.text = name
@@ -965,21 +903,15 @@ def build_xml_bytes(channel_names, programs):
             "programme",
             {
                 "channel": channel_ids[item["channel_name"]],
-                "start": item["start"].strftime(
-                    "%Y%m%d%H%M%S %z"
-                ),
-                "stop": item["stop"].strftime(
-                    "%Y%m%d%H%M%S %z"
-                )
+                "start": item["start"].strftime("%Y%m%d%H%M%S %z"),
+                "stop": item["stop"].strftime("%Y%m%d%H%M%S %z")
             }
         )
 
         title = ET.SubElement(
             programme,
             "title",
-            {
-                "lang": "tr"
-            }
+            {"lang": "tr"}
         )
 
         title.text = item["title"]
@@ -1084,7 +1016,7 @@ def main():
 
     print("=" * 68)
     print("TIVIBU 7 GÜNLÜK EPG")
-    print("DOM yakınlığına göre kanal-program eşleştirme")
+    print("Kanal kartından doğrudan program eşleştirme")
     print("Her gün ayrı sayfada, tarih değerleriyle seçim")
     print(f"Kaynak: {LIVE_TV_URL}")
     print(
@@ -1128,9 +1060,7 @@ def main():
                 flush=True
             )
 
-            date_records = read_available_dates(
-                page
-            )
+            date_records = read_available_dates(page)
 
             print(
                 "Bulunan tarih bağlantısı:",
@@ -1145,10 +1075,7 @@ def main():
             print(
                 "Alınacak günler:",
                 ", ".join(
-                    date_label(
-                        item["date"],
-                        today
-                    )
+                    date_label(item["date"], today)
                     for item in targets
                 )
             )
