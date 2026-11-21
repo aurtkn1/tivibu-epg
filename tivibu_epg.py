@@ -58,131 +58,123 @@ CATEGORY_RE = re.compile(
 )
 
 EXTRACT_JS = r"""() => {
-  const timeRe = /\d{1,2}:\d{2}\s*(?:→|➜|[-–])\s*\d{1,2}:\d{2}/;
-  const norm = value => (value || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
-  const rvAnchors = [...document.querySelectorAll('a[href*="/rv?"]')];
-  const byCode = new Map();
+    const norm = value =>
+        (value || '')
+        .replace(/\u00a0/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 
-  const diagnostics = {
-    rvLinks: rvAnchors.length,
-    mapped: 0,
-    unmapped: 0,
-    noChannelLabel: 0,
-    noPrograms: 0,
-    samples: []
-  };
+    const channelCards = [
+        ...document.querySelectorAll('.fullLink[channelcode][title]')
+    ];
 
-  function getProgramLines(container) {
-    const elements = [container, ...container.querySelectorAll('*')];
-    const lines = [];
-    const seen = new Set();
+    const channelNames = new Map();
 
-    for (const element of elements) {
-      const raw = element.innerText || element.textContent || '';
-      if (!timeRe.test(raw)) continue;
+    for (const card of channelCards) {
+        const code = norm(card.getAttribute('channelcode')).toLowerCase();
+        const name = norm(card.getAttribute('title'));
 
-      const parts = raw.split(/\n+/).map(norm).filter(Boolean);
-
-      for (const part of parts) {
-        if (!timeRe.test(part) || seen.has(part)) continue;
-        seen.add(part);
-        lines.push(part);
-      }
+        if (code && name) {
+            channelNames.set(code, name);
+        }
     }
 
-    return lines;
-  }
+    const rvAnchors = [
+        ...document.querySelectorAll('a[href*="/rv?"]')
+    ];
 
-  function getChannelLabels(container) {
-    const labels = new Set();
+    const byCode = new Map();
 
-    for (const img of container.querySelectorAll('img[alt]')) {
-      const alt = norm(img.getAttribute('alt'));
-      const match = alt.match(/^Kanal\s*:\s*(.+)$/i);
+    const diagnostics = {
+        channelCards: channelCards.length,
+        rvLinks: rvAnchors.length,
+        mapped: 0,
+        unmapped: 0,
+        missingChannel: 0,
+        missingProgram: 0,
+        samples: []
+    };
 
-      if (match && norm(match[1])) {
-        labels.add(norm(match[1]));
-      }
+    for (const anchor of rvAnchors) {
+        const href = anchor.getAttribute('href') || '';
+
+        let decoded = href;
+
+        try {
+            decoded = decodeURIComponent(href);
+        } catch (_) {}
+
+        const codeMatch = decoded.match(/(ch\d{20})/i);
+
+        if (!codeMatch) {
+            diagnostics.unmapped++;
+            continue;
+        }
+
+        const code = codeMatch[1].toLowerCase();
+        const channelName = channelNames.get(code);
+
+        if (!channelName) {
+            diagnostics.missingChannel++;
+
+            if (diagnostics.samples.length < 10) {
+                diagnostics.samples.push({
+                    code: code,
+                    href: href,
+                    reason: 'Kanal kartında channelcode bulunamadı'
+                });
+            }
+
+            continue;
+        }
+
+        const titleElement = anchor.querySelector('.programTitle');
+        const startElement = anchor.querySelector('.startTime');
+        const finishElement = anchor.querySelector('.finishTime');
+
+        if (!titleElement || !startElement || !finishElement) {
+            diagnostics.missingProgram++;
+            continue;
+        }
+
+        const title = norm(titleElement.innerText || titleElement.textContent);
+        const start = norm(startElement.innerText || startElement.textContent);
+        const finish = norm(finishElement.innerText || finishElement.textContent);
+
+        if (!title || !start || !finish) {
+            diagnostics.missingProgram++;
+            continue;
+        }
+
+        const typeElement = anchor.querySelector('.type');
+        const category = typeElement
+            ? norm(typeElement.innerText || typeElement.textContent)
+            : '';
+
+        const line = category
+            ? `${title} ${category} ${start} – ${finish}`
+            : `${title} ${start} – ${finish}`;
+
+        if (!byCode.has(code)) {
+            byCode.set(code, {
+                code: code,
+                name: channelName,
+                items: []
+            });
+        }
+
+        byCode.get(code).items.push(line);
     }
 
-    return [...labels];
-  }
+    const rows = [...byCode.values()];
 
-  for (const anchor of rvAnchors) {
-    const href = anchor.getAttribute('href') || '';
-    let decoded = href;
+    diagnostics.mapped = rows.length;
+    diagnostics.unmapped += diagnostics.missingChannel;
 
-    try {
-      decoded = decodeURIComponent(href);
-    } catch (_) {}
-
-    const codeMatch = decoded.match(/\b(ch\d{6,})\b/i);
-    if (!codeMatch) continue;
-
-    const channelCode = codeMatch[1].toLowerCase();
-
-    let node = anchor;
-    let chosenName = '';
-    let chosenItems = [];
-    let chosenDepth = 0;
-
-    for (let depth = 0; depth < 22 && node; depth++, node = node.parentElement) {
-      const labels = getChannelLabels(node);
-
-      if (labels.length !== 1) continue;
-
-      const items = getProgramLines(node);
-      if (!items.length) continue;
-
-      chosenName = labels[0];
-      chosenItems = items;
-      chosenDepth = depth;
-      break;
-    }
-
-    if (!chosenName) {
-      diagnostics.noChannelLabel++;
-      diagnostics.unmapped++;
-
-      if (diagnostics.samples.length < 12) {
-        diagnostics.samples.push({
-          code: channelCode,
-          href,
-          reason: 'Tek bir Kanal: görsel etiketi bulunamadı'
-        });
-      }
-
-      continue;
-    }
-
-    if (!chosenItems.length) {
-      diagnostics.noPrograms++;
-      diagnostics.unmapped++;
-      continue;
-    }
-
-    const previous = byCode.get(channelCode);
-
-    if (!previous || chosenItems.length > previous.items.length) {
-      byCode.set(channelCode, {
-        code: channelCode,
-        name: chosenName,
-        items: chosenItems,
-        depth: chosenDepth,
-        href
-      });
-    }
-  }
-
-  const rows = [...byCode.values()];
-
-  diagnostics.mapped = rows.length;
-  diagnostics.unmapped = Math.max(
-    diagnostics.unmapped,
-    rvAnchors.length - rows.length
-  );
-
-  return {rows, diagnostics};
+    return {
+        rows: rows,
+        diagnostics: diagnostics
+    };
 }"""
 
 
@@ -214,6 +206,7 @@ def slugify(value):
         value = value.replace(old, new).replace(old.upper(), new)
 
     value = unicodedata.normalize("NFKD", value)
+
     value = "".join(
         char for char in value
         if not unicodedata.combining(char)
@@ -499,6 +492,7 @@ def collect_all(page, today):
 
                 if code not in channels:
                     channels[code] = {"name": name}
+
                 elif len(name) > len(channels[code]["name"]):
                     channels[code]["name"] = name
 
@@ -534,10 +528,12 @@ def collect_all(page, today):
                         day_programs += 1
 
             print(
-                f"    {len(rows)} eşleşen kanal grubu, "
-                f"{day_programs} yeni program | "
-                f"rv bağlantısı: {diagnostics.get('rvLinks', 0)}, "
-                f"eşleşmeyen: {diagnostics.get('unmapped', 0)}"
+                f"    Kanal kartı: {diagnostics.get('channelCards', 0)} | "
+                f"Program bağlantısı: {diagnostics.get('rvLinks', 0)} | "
+                f"Eşleşen kanal: {len(rows)} | "
+                f"Yeni program: {day_programs} | "
+                f"Kanalı bulunamayan: {diagnostics.get('missingChannel', 0)} | "
+                f"Program verisi eksik: {diagnostics.get('missingProgram', 0)}"
             )
 
             if diagnostics.get("samples") and offset == 0:
@@ -683,7 +679,8 @@ def main():
 
     print("=" * 68)
     print("TIVIBU 7 GÜNLÜK EPG")
-    print("Kanal ID'si /rv bağlantısından, kanal adı Kanal: görselinden alınır")
+    print("Kanal adı: .fullLink[channelcode][title]")
+    print("Program: /rv bağlantısı içindeki programTitle/startTime/finishTime")
     print(f"Kaynak: {LIVE_TV_URL}")
     print(f"Başlangıç: {today.strftime('%d.%m.%Y')}")
     print(f"Kategori sayısı: {len(CATEGORY_PAGES)}")
