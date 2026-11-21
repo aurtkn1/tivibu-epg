@@ -40,16 +40,49 @@ CATEGORY_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Kanal bağlantısından başlayıp yalnızca aynı kanal kartının içindeki
-# program bağlantılarını toplar. Bir üst kapsayıcıda birden fazla farklı
-# kanal bağlantısı varsa o kapsayıcı kesinlikle kullanılmaz.
 EXTRACT_JS = r"""() => {
   const timeRe = /\d{1,2}:\d{2}\s*(?:→|➜|[-–])\s*\d{1,2}:\d{2}/;
   const norm = s => (s || '').replace(/\s+/g, ' ').trim();
   const channelAnchors = [...document.querySelectorAll('a[href*="/kanallar/"]')];
   const rows = [];
   const seenChannels = new Set();
-  const diagnostics = { channelAnchors: channelAnchors.length, mapped: 0, unmapped: 0, samples: [] };
+  const diagnostics = {
+    channelAnchors: channelAnchors.length,
+    mapped: 0,
+    unmapped: 0,
+    timeElements: 0,
+    samples: []
+  };
+
+  const allTimeElements = [...document.querySelectorAll('body *')].filter(el => {
+    const text = norm(el.innerText || el.textContent);
+    return text && timeRe.test(text);
+  });
+  diagnostics.timeElements = allTimeElements.length;
+
+  function getProgramElements(container) {
+    const candidates = [...container.querySelectorAll('*')].filter(el => {
+      const text = norm(el.innerText || el.textContent);
+      return text && timeRe.test(text);
+    });
+
+    const leaves = candidates.filter(el => {
+      return ![...el.children].some(child => {
+        const childText = norm(child.innerText || child.textContent);
+        return childText && timeRe.test(childText);
+      });
+    });
+
+    const result = [];
+    const seen = new Set();
+    for (const el of leaves) {
+      const text = norm(el.innerText || el.textContent);
+      if (!text || !timeRe.test(text) || seen.has(text)) continue;
+      seen.add(text);
+      result.push(text);
+    }
+    return result;
+  }
 
   for (const channelAnchor of channelAnchors) {
     let channelHref = '';
@@ -69,56 +102,44 @@ EXTRACT_JS = r"""() => {
     channelName = channelName.replace(/^Kanal\s*:\s*/i, '').trim();
     if (!channelName) continue;
 
-    let node = channelAnchor;
-    let chosenPrograms = null;
+    let node = channelAnchor.parentElement;
+    let chosenItems = [];
+    let chosenDepth = 0;
 
-    for (let depth = 0; depth < 22 && node; depth++, node = node.parentElement) {
-      const links = [...node.querySelectorAll('a[href]')];
-      const channelLinks = new Set();
-      for (const link of links) {
+    for (let depth = 1; depth <= 24 && node; depth++, node = node.parentElement) {
+      const channelLinks = [...node.querySelectorAll('a[href*="/kanallar/"]')];
+      const uniqueChannelHrefs = new Set();
+      for (const link of channelLinks) {
         try {
           const u = new URL(link.href, location.href);
-          if (u.pathname.toLowerCase().includes('/kanallar/')) {
-            channelLinks.add(u.origin + u.pathname);
-          }
+          uniqueChannelHrefs.add(u.origin + u.pathname);
         } catch (_) {}
       }
 
-      if (channelLinks.size > 1) continue;
+      if (uniqueChannelHrefs.size > 1) continue;
 
-      const programs = links.filter(a => {
-        const text = norm(a.innerText || a.textContent);
-        return timeRe.test(text);
-      });
-
-      if (programs.length) {
-        chosenPrograms = programs;
+      const items = getProgramElements(node);
+      if (items.length) {
+        chosenItems = items;
+        chosenDepth = depth;
         break;
       }
     }
 
-    if (!chosenPrograms || !chosenPrograms.length) {
+    if (!chosenItems.length) {
       diagnostics.unmapped++;
-      if (diagnostics.samples.length < 8) {
-        diagnostics.samples.push({ name: channelName, href: channelHref });
+      if (diagnostics.samples.length < 12) {
+        diagnostics.samples.push({
+          name: channelName,
+          href: channelHref,
+          reason: 'Kanal bağlantısının üst kapsayıcılarında saat içeren program satırı bulunamadı'
+        });
       }
       continue;
     }
 
-    const items = [];
-    const seenItems = new Set();
-    for (const a of chosenPrograms) {
-      const text = norm(a.innerText || a.textContent);
-      if (text && !seenItems.has(text)) {
-        seenItems.add(text);
-        items.push(text);
-      }
-    }
-
-    if (!items.length) continue;
-
     seenChannels.add(channelHref);
-    rows.push({ name: channelName, href: channelHref, items });
+    rows.push({ name: channelName, href: channelHref, items: chosenItems, depth: chosenDepth });
   }
 
   diagnostics.mapped = rows.length;
@@ -333,9 +354,13 @@ def collect_seven_days(page, today):
 
         if diagnostics.get("unmapped"):
             print(
-                f"  Bilgi: {diagnostics['unmapped']} kanal kartı eşleştirilemedi; "
-                f"{diagnostics.get('mapped', 0)} kart başarıyla eşleşti."
+                f"  Bilgi: {diagnostics['unmapped']} kanal bağlantısı eşleştirilemedi; "
+                f"{diagnostics.get('mapped', 0)} kart başarıyla eşleşti. "
+                f"Saat içeren DOM elemanı: {diagnostics.get('timeElements', 0)}"
             )
+            if diagnostics.get("mapped", 0) < MIN_CHANNELS and offset == 0:
+                for sample in diagnostics.get("samples", [])[:5]:
+                    print(f"    Eşleşmeyen kanal: {sample.get('name')} | {sample.get('reason')}")
 
     return sorted(all_channels.values(), key=str.casefold), list(all_programs.values())
 
