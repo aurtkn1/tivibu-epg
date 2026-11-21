@@ -1,4 +1,3 @@
-
 import html
 import os
 import re
@@ -56,8 +55,8 @@ CATEGORY_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Kanal ID'si /rv bağlantısından, kanal adı ise yalnızca "Kanal:"
-# etiketi taşıyan görselden alınır.
+# Kanal ID'si /rv bağlantısından, kanal adı ise yalnızca "Kanal:" etiketi
+# taşıyan görselden alınır. Program başlıklarından kanal adı türetilmez.
 EXTRACT_JS = r"""() => {
   const timeRe = /\d{1,2}:\d{2}\s*(?:→|➜|[-–])\s*\d{1,2}:\d{2}/;
   const norm = value => (value || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
@@ -88,6 +87,7 @@ EXTRACT_JS = r"""() => {
         lines.push(part);
       }
     }
+
     return lines;
   }
 
@@ -97,7 +97,10 @@ EXTRACT_JS = r"""() => {
     for (const img of container.querySelectorAll('img[alt]')) {
       const alt = norm(img.getAttribute('alt'));
       const match = alt.match(/^Kanal\s*:\s*(.+)$/i);
-      if (match && norm(match[1])) labels.add(norm(match[1]));
+
+      if (match && norm(match[1])) {
+        labels.add(norm(match[1]));
+      }
     }
 
     return [...labels];
@@ -123,6 +126,7 @@ EXTRACT_JS = r"""() => {
 
     for (let depth = 0; depth < 22 && node; depth++, node = node.parentElement) {
       const labels = getChannelLabels(node);
+
       if (labels.length !== 1) continue;
 
       const items = getProgramLines(node);
@@ -145,6 +149,7 @@ EXTRACT_JS = r"""() => {
           reason: 'Tek bir Kanal: görsel etiketi bulunamadı'
         });
       }
+
       continue;
     }
 
@@ -189,9 +194,17 @@ def normalize_name(value):
 
 def slugify(value):
     value = clean_text(value)
+
     replacements = {
-        "ç": "c", "ğ": "g", "ı": "i", "ö": "o",
-        "ş": "s", "ü": "u", "â": "a", "î": "i", "û": "u",
+        "ç": "c",
+        "ğ": "g",
+        "ı": "i",
+        "ö": "o",
+        "ş": "s",
+        "ü": "u",
+        "â": "a",
+        "î": "i",
+        "û": "u",
     }
 
     for old, new in replacements.items():
@@ -199,8 +212,9 @@ def slugify(value):
 
     value = unicodedata.normalize("NFKD", value)
     value = "".join(
-        char for char in value if not unicodedata.combining(char)
-    ).lower()
+        char for char in value
+        if not unicodedata.combining(char)
+    )
     value = re.sub(r"[^a-z0-9]+", "_", value).strip("_")
 
     return value or "channel"
@@ -213,9 +227,11 @@ def parse_program_line(line):
     if not match:
         return None
 
-    before_time = clean_text(line[:match.start()]).strip(" -–")
-    category = ""
+    before_time = clean_text(
+        line[:match.start()]
+    ).strip(" -–")
 
+    category = ""
     category_match = CATEGORY_RE.search(before_time)
 
     if category_match:
@@ -264,31 +280,55 @@ def date_label(day, today):
 
 def select_date(page, selected_day, today):
     expected = selected_day.strftime("%Y.%m.%d")
-    date_links = page.locator("a[channeldatebegin][channeldateend]")
+
+    # Yalnızca görünür tarih bağlantılarını değerlendir.
+    date_links = page.locator(
+        "a[channeldatebegin][channeldateend]:visible"
+    )
 
     for index in range(date_links.count()):
         link = date_links.nth(index)
-        begin = link.get_attribute("channeldatebegin") or ""
 
-        if begin.startswith(expected):
-            link.click(timeout=15000, force=True)
+        begin = link.get_attribute(
+            "channeldatebegin"
+        ) or ""
 
-            try:
-                page.wait_for_load_state(
-                    "networkidle",
-                    timeout=5000
-                )
-            except PlaywrightTimeoutError:
-                pass
+        if not begin.startswith(expected):
+            continue
 
-            page.wait_for_timeout(DATE_WAIT_MS)
-            return
+        classes = (
+            link.get_attribute("class") or ""
+        ).lower().split()
 
+        # Tarih zaten seçiliyse yeniden tıklama.
+        if "active" not in classes:
+            link.click(timeout=15000)
+
+        try:
+            page.wait_for_load_state(
+                "networkidle",
+                timeout=5000
+            )
+        except PlaywrightTimeoutError:
+            pass
+
+        page.wait_for_timeout(DATE_WAIT_MS)
+        return
+
+    # Tarih niteliği bulunamazsa görünür metin üzerinden dene.
     label = date_label(selected_day, today)
-    locator = page.get_by_text(label, exact=True)
 
-    if locator.count():
-        locator.first.click(timeout=15000, force=True)
+    visible_labels = page.locator(
+        "a:visible"
+    ).filter(
+        has_text=re.compile(
+            r"^\s*" + re.escape(label) + r"\s*$",
+            re.IGNORECASE
+        )
+    )
+
+    if visible_labels.count():
+        visible_labels.first.click(timeout=15000)
 
         try:
             page.wait_for_load_state(
@@ -302,29 +342,36 @@ def select_date(page, selected_day, today):
         return
 
     raise RuntimeError(
-        f"{expected} tarihi sayfada bulunamadı; tarih seçimi yapılmadı."
+        f"{expected} tarihi için görünür tarih bağlantısı bulunamadı. "
+        "Tivibu tarih menüsü değişmiş olabilir; gizli bağlantıya tıklanmadı."
     )
 
 
 def assign_times(items, selected_day):
     parsed = [
         item
-        for item in (parse_program_line(line) for line in items)
+        for item in (
+            parse_program_line(line)
+            for line in items
+        )
         if item
     ]
 
     if not parsed:
         return []
 
-    # Her tarih ayrı pencere olarak işlenir.
-    # İlk program seçilen günden önceye taşınmaz.
     current_day = selected_day
     previous_start_minutes = None
     result = []
 
     for item in parsed:
-        start_minutes = item["sh"] * 60 + item["sm"]
-        end_minutes = item["eh"] * 60 + item["em"]
+        start_minutes = (
+            item["sh"] * 60 + item["sm"]
+        )
+
+        end_minutes = (
+            item["eh"] * 60 + item["em"]
+        )
 
         if (
             previous_start_minutes is not None
@@ -411,7 +458,10 @@ def collect_all(page, today):
     for category_name, category_path in CATEGORY_PAGES:
         category_url = BASE_URL + category_path
 
-        print(f"\nKATEGORİ: {category_name}", flush=True)
+        print(
+            f"\nKATEGORİ: {category_name}",
+            flush=True
+        )
 
         page.goto(
             category_url,
@@ -431,16 +481,27 @@ def collect_all(page, today):
                 flush=True
             )
 
-            select_date(page, selected_day, today)
+            select_date(
+                page,
+                selected_day,
+                today
+            )
 
             extracted = page.evaluate(EXTRACT_JS)
+
             rows = extracted.get("rows", [])
             diagnostics = extracted.get("diagnostics", {})
+
             day_programs = 0
 
             for row in rows:
-                code = clean_text(row.get("code")).lower()
-                name = clean_text(row.get("name"))
+                code = clean_text(
+                    row.get("code")
+                ).lower()
+
+                name = clean_text(
+                    row.get("name")
+                )
 
                 if (
                     not code
@@ -450,7 +511,10 @@ def collect_all(page, today):
                     continue
 
                 if code not in channels:
-                    channels[code] = {"name": name}
+                    channels[code] = {
+                        "name": name
+                    }
+
                 elif len(name) > len(channels[code]["name"]):
                     channels[code]["name"] = name
 
@@ -482,6 +546,7 @@ def collect_all(page, today):
                             "channel_name": channel_name,
                             **program,
                         }
+
                         day_programs += 1
 
             print(
@@ -494,12 +559,14 @@ def collect_all(page, today):
             if diagnostics.get("samples") and offset == 0:
                 for sample in diagnostics["samples"][:4]:
                     print(
-                        f"      Eşleşmedi: {sample.get('code')} | "
+                        f"      Eşleşmedi: "
+                        f"{sample.get('code')} | "
                         f"{sample.get('reason')}"
                     )
 
         print(
-            f"  {category_name}: {len(category_channels)} kanal bulundu."
+            f"  {category_name}: "
+            f"{len(category_channels)} kanal bulundu."
         )
 
     return channels, list(programs.values())
@@ -524,10 +591,13 @@ def build_xml(channels, programs):
         used_ids.add(channel_id)
         channel_ids[code] = channel_id
 
-    root = ET.Element("tv", {
-        "generator-info-name": "Tivibu 7 Günlük EPG",
-        "generator-info-url": LIVE_TV_URL,
-    })
+    root = ET.Element(
+        "tv",
+        {
+            "generator-info-name": "Tivibu 7 Günlük EPG",
+            "generator-info-url": LIVE_TV_URL,
+        }
+    )
 
     for code, info in sorted(
         channels.items(),
@@ -544,6 +614,7 @@ def build_xml(channels, programs):
             "display-name",
             {"lang": "tr"}
         )
+
         display.text = info["name"]
 
     for item in sorted(
@@ -554,17 +625,26 @@ def build_xml(channels, programs):
             value["stop"]
         )
     ):
-        node = ET.SubElement(root, "programme", {
-            "channel": channel_ids[item["channel_code"]],
-            "start": item["start"].strftime("%Y%m%d%H%M%S %z"),
-            "stop": item["stop"].strftime("%Y%m%d%H%M%S %z"),
-        })
+        node = ET.SubElement(
+            root,
+            "programme",
+            {
+                "channel": channel_ids[item["channel_code"]],
+                "start": item["start"].strftime(
+                    "%Y%m%d%H%M%S %z"
+                ),
+                "stop": item["stop"].strftime(
+                    "%Y%m%d%H%M%S %z"
+                ),
+            }
+        )
 
         title = ET.SubElement(
             node,
             "title",
             {"lang": "tr"}
         )
+
         title.text = item["title"]
 
         if item.get("category"):
@@ -573,6 +653,7 @@ def build_xml(channels, programs):
                 "category",
                 {"lang": "tr"}
             )
+
             category.text = item["category"]
 
     tree = ET.ElementTree(root)
@@ -586,7 +667,10 @@ def build_xml(channels, programs):
         xml_declaration=True
     )
 
-    os.replace(temp_file, OUTPUT_FILE)
+    os.replace(
+        temp_file,
+        OUTPUT_FILE
+    )
 
 
 def validate_data(channels, programs):
@@ -623,7 +707,10 @@ def main():
 
     print("=" * 68)
     print("TIVIBU 7 GÜNLÜK EPG")
-    print("Kanal ID'si /rv bağlantısından, kanal adı Kanal: görselinden alınır")
+    print(
+        "Kanal ID'si /rv bağlantısından, "
+        "kanal adı Kanal: görselinden alınır"
+    )
     print(f"Kaynak: {LIVE_TV_URL}")
     print(f"Başlangıç: {today.strftime('%d.%m.%Y')}")
     print(f"Kategori sayısı: {len(CATEGORY_PAGES)}")
@@ -634,7 +721,7 @@ def main():
             headless=True,
             args=[
                 "--no-sandbox",
-                "--disable-dev-shm-usage"
+                "--disable-dev-shm-usage",
             ],
         )
 
@@ -643,19 +730,29 @@ def main():
             timezone_id="Europe/Istanbul",
             viewport={
                 "width": 1440,
-                "height": 1100
+                "height": 1100,
             },
         )
 
         page.set_default_timeout(PAGE_TIMEOUT)
 
         try:
-            channels, programs = collect_all(page, today)
+            channels, programs = collect_all(
+                page,
+                today
+            )
         finally:
             browser.close()
 
-    validate_data(channels, programs)
-    build_xml(channels, programs)
+    validate_data(
+        channels,
+        programs
+    )
+
+    build_xml(
+        channels,
+        programs
+    )
 
     days = sorted({
         program["start"].date()
