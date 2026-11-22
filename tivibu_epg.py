@@ -19,10 +19,6 @@ DAYS = 7
 PAGE_TIMEOUT = 60000
 DATE_WAIT_MS = 1500
 
-# Tivibu'dan seçilen yayın günü XML'e 1 gün ileri yazıldığı için
-# program tarihlerini bir gün geri alıyoruz.
-EPG_DATE_OFFSET_DAYS = -1
-
 MIN_CHANNELS = 30
 MIN_PROGRAMS = 100
 MIN_DAYS = 6
@@ -358,8 +354,8 @@ def assign_times(items, selected_day):
     if not parsed:
         return []
 
-    # Seçilen Tivibu yayın gününü XML tarihine dönüştür.
-    current_day = selected_day + timedelta(days=EPG_DATE_OFFSET_DAYS)
+    # Programların başlangıç tarihi seçilen Tivibu tarihidir.
+    current_day = selected_day
 
     previous_start_minutes = None
     result = []
@@ -368,6 +364,7 @@ def assign_times(items, selected_day):
         start_minutes = item["sh"] * 60 + item["sm"]
         end_minutes = item["eh"] * 60 + item["em"]
 
+        # Program sırası gece yarısını geçtiyse sonraki gün başlar.
         if (
             previous_start_minutes is not None
             and start_minutes < previous_start_minutes
@@ -383,6 +380,8 @@ def assign_times(items, selected_day):
             tzinfo=ISTANBUL
         )
 
+        # Bitiş saati başlangıç saatinden küçük veya eşitse
+        # program gece yarısını geçiyor demektir.
         end_day = (
             current_day + timedelta(days=1)
             if end_minutes <= start_minutes
@@ -430,23 +429,21 @@ def collect_all(page, today):
     channels = {}
     programs = {}
 
-    # XML yayın aralığı da tarih düzeltmesiyle aynı ölçüde kaydırılır.
-    window_start_day = today + timedelta(days=EPG_DATE_OFFSET_DAYS)
-    window_end_day = today + timedelta(days=DAYS + EPG_DATE_OFFSET_DAYS)
-
     window_start = datetime(
-        window_start_day.year,
-        window_start_day.month,
-        window_start_day.day,
+        today.year,
+        today.month,
+        today.day,
         0,
         0,
         tzinfo=ISTANBUL
     )
 
+    last_day = today + timedelta(days=DAYS)
+
     window_end = datetime(
-        window_end_day.year,
-        window_end_day.month,
-        window_end_day.day,
+        last_day.year,
+        last_day.month,
+        last_day.day,
         0,
         0,
         tzinfo=ISTANBUL
@@ -685,18 +682,16 @@ def main():
     started = time.time()
     today = datetime.now(ISTANBUL).date()
 
-    corrected_start = today + timedelta(days=EPG_DATE_OFFSET_DAYS)
-    corrected_end = corrected_start + timedelta(days=DAYS - 1)
+    last_day = today + timedelta(days=DAYS - 1)
 
     print("=" * 68)
     print("TIVIBU 7 GÜNLÜK EPG")
     print("Kanal adı: .fullLink[channelcode][title]")
     print("Program: /rv bağlantısı içindeki programTitle/startTime/finishTime")
     print(f"Kaynak: {LIVE_TV_URL}")
-    print(f"Tivibu başlangıç tarihi: {today.strftime('%d.%m.%Y')}")
-    print(f"XML başlangıç tarihi: {corrected_start.strftime('%d.%m.%Y')}")
-    print(f"XML son tarih: {corrected_end.strftime('%d.%m.%Y')}")
-    print(f"Tarih düzeltmesi: {EPG_DATE_OFFSET_DAYS} gün")
+    print(f"Başlangıç tarihi: {today.strftime('%d.%m.%Y')}")
+    print(f"Son tarih: {last_day.strftime('%d.%m.%Y')}")
+    print("Tarih düzeltmesi: Yok")
     print(f"Kategori sayısı: {len(CATEGORY_PAGES)}")
     print("=" * 68)
 
