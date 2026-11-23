@@ -34,6 +34,8 @@ CATEGORY_PAGES = [
     ("Sinema", "/canli-tv/sinema"),
 ]
 
+# Kanal kodu üzerinden kesin adlandırma.
+# Logo sırası eşleştirmesi kullanılmaz.
 CHANNEL_NAME_OVERRIDES = {
     "ch00000000000000002843": "TYT TÜRK",
     "ch00000000000000001981": "TV4",
@@ -54,7 +56,7 @@ CHANNEL_NAME_OVERRIDES = {
     "ch00000000000000001881": "LOVE NATURE",
     "ch00000000000000001891": "VIASAT HISTORY",
 
-    # AS TV: Tivibu yayın bağlantısındaki programid/contentid ile doğrulandı
+    # AS TV: Tivibu yayın bağlantısındaki programid/contentid ile doğrulandı.
     "ch00000000000000002721": "AS TV",
 
     "ch00000000000000001061": "BBC EARTH",
@@ -85,48 +87,30 @@ EXTRACT_JS = r"""(channelOverrides) => {
   const getCode = href => {
     if (!href) return '';
     let decoded = href;
-
-    try {
-      decoded = decodeURIComponent(href);
-    } catch (_) {}
-
+    try { decoded = decodeURIComponent(href); } catch (_) {}
     const match = decoded.match(/\b(ch\d{6,})\b/i);
     return match ? match[1].toLowerCase() : '';
   };
 
-  // Kanal kartındaki logo adını, aynı kartın Tivibu kanal koduyla eşleştir.
-  // Sayfadaki logo sırası kesinlikle kullanılmaz.
+  // Kanal kartlarındaki logo/ad bilgisini aynı kartın bağlantısındaki
+  // Tivibu kanal koduyla eşleştir. DOM sırası kullanılmaz.
   const namesByCode = new Map();
   const conflicts = new Map();
 
   for (const img of document.querySelectorAll('img[alt]')) {
     const alt = norm(img.getAttribute('alt'));
-
     if (!/^Kanal\s*:/i.test(alt)) continue;
 
-    const name = norm(
-      alt.replace(/^Kanal\s*:\s*/i, '')
-    );
-
+    const name = norm(alt.replace(/^Kanal\s*:\s*/i, ''));
     if (!name) continue;
 
     let node = img;
     let foundCodes = new Set();
 
-    // Logo etrafındaki en yakın kartta tek bir kanal kodu ara.
-    for (
-      let depth = 0;
-      depth < 7 && node;
-      depth++, node = node.parentElement
-    ) {
-      const links = [
-        ...node.querySelectorAll('a[href]')
-      ];
-
+    for (let depth = 0; depth < 7 && node; depth++, node = node.parentElement) {
+      const links = [...node.querySelectorAll('a[href]')];
       const codes = new Set(
-        links
-          .map(a => getCode(a.href))
-          .filter(Boolean)
+        links.map(a => getCode(a.href)).filter(Boolean)
       );
 
       if (codes.size === 1) {
@@ -138,41 +122,29 @@ EXTRACT_JS = r"""(channelOverrides) => {
     if (foundCodes.size !== 1) continue;
 
     const code = [...foundCodes][0];
-
-    if (channelOverrides && channelOverrides[code]) {
-      continue;
-    }
+    if (channelOverrides && channelOverrides[code]) continue;
 
     if (!namesByCode.has(code)) {
       namesByCode.set(code, name);
     } else if (namesByCode.get(code) !== name) {
       conflicts.set(code, new Set([
-        ...(conflicts.get(code) || [
-          namesByCode.get(code)
-        ]),
+        ...(conflicts.get(code) || [namesByCode.get(code)]),
         name
       ]));
     }
   }
 
-  // Programları bağlantıdaki Tivibu kanal koduna göre grupla.
+  // Programları URL'deki kanal koduna göre grupla.
   const groups = new Map();
 
   for (const a of document.querySelectorAll('a[href]')) {
-    const text = norm(
-      a.innerText || a.textContent
-    );
-
+    const text = norm(a.innerText || a.textContent);
     if (!a.href || !timeRe.test(text)) continue;
 
     const code = getCode(a.href);
-
     if (!code) continue;
 
-    if (!groups.has(code)) {
-      groups.set(code, []);
-    }
-
+    if (!groups.has(code)) groups.set(code, []);
     groups.get(code).push(text);
   }
 
@@ -192,7 +164,6 @@ EXTRACT_JS = r"""(channelOverrides) => {
         code,
         names: [...conflicts.get(code)]
       });
-
       continue;
     }
 
@@ -201,7 +172,6 @@ EXTRACT_JS = r"""(channelOverrides) => {
         code,
         programCount: items.length
       });
-
       continue;
     }
 
@@ -379,6 +349,16 @@ def select_date(page, label):
 
 
 def assign_times(items, selected_day, channel_name=""):
+    """
+    Seçilen Tivibu gününü gerçek takvim tarihine dönüştürür.
+
+    Eski sürüm, ilk yayın 18:00 sonrasında başlıyor ve listede gece
+    yarısı geçişi bulunuyorsa tarihi bir gün geri alıyordu. Bu nedenle
+    bugünün yayınları XML'de dünkü tarihe yazılabiliyordu.
+
+    Yeni sürümde başlangıç tarihi daima selected_day'dir. Saat gece
+    yarısını geçtiğinde yalnızca sonraki programlar ertesi güne alınır.
+    """
     parsed = [
         p for p in (
             parse_program_line(x)
@@ -390,36 +370,7 @@ def assign_times(items, selected_day, channel_name=""):
     if not parsed:
         return []
 
-    first_minutes = (
-        parsed[0]["sh"] * 60 +
-        parsed[0]["sm"]
-    )
-
-    has_rollover = any(
-        (
-            parsed[i]["sh"] * 60 +
-            parsed[i]["sm"]
-        ) < (
-            parsed[i - 1]["sh"] * 60 +
-            parsed[i - 1]["sm"]
-        )
-        for i in range(1, len(parsed))
-    )
-
-    channel_key = clean_text(
-        channel_name
-    ).casefold()
-
-    current_day = (
-        selected_day - timedelta(days=1)
-        if (
-            channel_key not in {"bbc earth", "id"}
-            and first_minutes >= 18 * 60
-            and has_rollover
-        )
-        else selected_day
-    )
-
+    current_day = selected_day
     previous_minutes = None
     result = []
 
@@ -427,6 +378,11 @@ def assign_times(items, selected_day, channel_name=""):
         start_minutes = (
             p["sh"] * 60 +
             p["sm"]
+        )
+
+        end_minutes = (
+            p["eh"] * 60 +
+            p["em"]
         )
 
         if (
@@ -446,9 +402,7 @@ def assign_times(items, selected_day, channel_name=""):
 
         end_day = (
             current_day + timedelta(days=1)
-            if (
-                p["eh"] * 60 + p["em"]
-            ) <= start_minutes
+            if end_minutes <= start_minutes
             else current_day
         )
 
@@ -461,10 +415,11 @@ def assign_times(items, selected_day, channel_name=""):
             tzinfo=ISTANBUL
         )
 
-        if (
-            stop > start
-            and (stop - start).total_seconds() <= 24 * 3600
-        ):
+        duration = (
+            stop - start
+        ).total_seconds()
+
+        if 0 < duration <= 24 * 3600:
             result.append({
                 "title": p["title"],
                 "start": start,
@@ -478,6 +433,7 @@ def assign_times(items, selected_day, channel_name=""):
 
 def collect_all(page, today):
     # Kanal adı değil, Tivibu kanal kodu birincil anahtardır.
+    # Aynı görünen ada sahip farklı kodlar ayrı kanallar olarak korunur.
     all_channels = {}
     all_programs = {}
 
@@ -662,7 +618,8 @@ def collect_all(page, today):
             f"{len(category_channels)} kanal bulundu."
         )
 
-    # Aynı isimli farklı Tivibu ID'leri ayrı kanallar olarak koru.
+    # Aynı isimli farklı Tivibu ID'leri ayrı kanallar olarak korunur.
+    # Oynatıcıda iki Tarih TV kartı varsa iki ID de XML'de kalır.
     names_to_codes = {}
 
     for code, name in all_channels.items():
@@ -755,6 +712,7 @@ def build_xml(channels, programs):
         title.text = item["title"]
 
     tree = ET.ElementTree(root)
+
     ET.indent(
         tree,
         space="  "
@@ -767,7 +725,7 @@ def build_xml(channels, programs):
     )
 
 
-def validate_data(channels, programs):
+def validate_data(channels, programs, today):
     missing_codes = [
         code for code in channels
         if not re.fullmatch(
@@ -798,6 +756,23 @@ def validate_data(channels, programs):
             "Program bulunamadı. Mevcut XML korunuyor."
         )
 
+    # Seçilen 7 günlük aralığın dışındaki yayınlar XML'e giremez.
+    first_day = today
+    last_day_exclusive = today + timedelta(days=DAYS)
+
+    out_of_range = [
+        p for p in programs
+        if not (
+            first_day <= p["start"].date() < last_day_exclusive
+        )
+    ]
+
+    if out_of_range:
+        raise RuntimeError(
+            "EPG'de seçilen 7 günlük aralığın dışında program bulundu. "
+            f"Örnekler: {out_of_range[:5]}. Mevcut XML korunuyor."
+        )
+
     day_count = len({
         p["start"].date()
         for p in programs
@@ -815,7 +790,7 @@ def main():
     today = datetime.now(ISTANBUL).date()
 
     print("=" * 68)
-    print("TIVIBU 7 GÜNLÜK EPG - ALT KATEGORİLER")
+    print("TIVIBU 7 GÜNLÜK EPG - TARİH DÜZELTMELİ SÜRÜM")
     print(f"Kaynak: {LIVE_TV_URL}")
     print(f"Başlangıç: {today.strftime('%d.%m.%Y')}")
     print(f"Kategori sayısı: {len(CATEGORY_PAGES)}")
@@ -852,7 +827,8 @@ def main():
 
     validate_data(
         channels,
-        programs
+        programs,
+        today
     )
 
     build_xml(
