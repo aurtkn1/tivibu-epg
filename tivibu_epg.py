@@ -1,4 +1,3 @@
-
 import re
 import html
 import time
@@ -20,6 +19,7 @@ PAGE_TIMEOUT = 60000
 DATE_WAIT_MS = 1100
 MIN_CHANNELS = 30
 
+# Tivibu'nun bütün kategori sayfaları
 CATEGORY_PAGES = [
     ("Tüm Kanallar", "/canli-tv"),
     ("Diğer", "/canli-tv/diger"),
@@ -34,6 +34,35 @@ CATEGORY_PAGES = [
     ("Çocuk", "/canli-tv/cocuk"),
     ("Sinema", "/canli-tv/sinema"),
 ]
+
+# Kanal kodu üzerinden kesin adlandırma. Diğer kanallar için mevcut
+# kart/logo sırası eşleştirmesi aynen korunur.
+CHANNEL_NAME_OVERRIDES = {
+    # Eksik kanallar
+    "ch00000000000000002843": "TYT TÜRK",
+    "ch00000000000000001981": "TV4",
+    "ch00000000000000002267": "SZC TV",
+    "ch00000000000000001308": "TRT TÜRK",
+    "ch00000000000000001267": "TRT AVAZ",
+    "ch00000000000000002925": "TRT GENÇ",
+    "ch00000000000000002773": "TİVİ 6",
+    "ch00000000000000001070": "CNN INTERNATIONAL",
+    "ch00000000000000001063": "BBC NEWS",
+    "ch00000000000000001013": "AL JAZEERA INTERNATIONAL",
+    "ch00000000000000001101": "CNBC",
+    "ch00000000000000001309": "TRT WORLD",
+
+    # Eşleşmesi karışan belgesel kanalları
+    "ch00000000000000001111": "DISCOVERY CHANNEL",
+    "ch00000000000000001201": "NATIONAL GEOGRAPHIC",
+    "ch00000000000000001211": "NATIONAL GEOGRAPHIC WILD",
+    "ch00000000000000001881": "LOVE NATURE",
+    "ch00000000000000001891": "VIASAT HISTORY",
+
+    # Saat kayması kontrolü istenen kanallar
+    "ch00000000000000001061": "BBC EARTH",
+    "ch00000000000000001171": "ID",
+}
 
 BAD_CHANNELS = {
     "BENİM KANALIM",
@@ -52,168 +81,133 @@ CATEGORY_RE = re.compile(
 )
 
 
-EXTRACT_JS = r"""() => {
+EXTRACT_JS = r"""(channelOverrides) => {
   const timeRe = /\d{1,2}:\d{2}\s*(?:→|➜|[-–])\s*\d{1,2}:\d{2}/;
   const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-  const channelPrefix = /^Kanal\s*:/i;
 
-  const knownChannels = {
-    'ch00000000000000002843': 'TYT TÜRK',
-    'ch00000000000000001981': 'TV4',
-    'ch00000000000000002267': 'SZC TV',
-    'ch00000000000000001308': 'TRT TÜRK',
-    'ch00000000000000001267': 'TRT AVAZ',
-    'ch00000000000000002925': 'TRT GENÇ',
-    'ch00000000000000002773': 'TİVİ 6',
-    'ch00000000000000001070': 'CNN INTERNATIONAL',
-    'ch00000000000000001063': 'BBC NEWS',
-    'ch00000000000000001013': 'AL JAZEERA INTERNATIONAL',
-    'ch00000000000000001101': 'CNBC',
-    'ch00000000000000001309': 'TRT WORLD'
-  };
-
-  const channelId = href => {
-    if (!href) return '';
-    let value = String(href);
-    try { value = decodeURIComponent(value); } catch (e) {}
-    const match = value.match(/ch\d{20,}/i);
-    return match ? match[0].toLowerCase() : '';
-  };
-
-  const logoNames = [];
-  const logoLinks = [];
-  const idToName = new Map();
-
-  // Kanal logolarını ve logoları taşıyan bağlantıları oku.
-  for (const img of document.querySelectorAll('img[alt]')) {
-    const alt = norm(img.getAttribute('alt'));
-    if (!channelPrefix.test(alt)) continue;
-
-    const name = norm(alt.replace(channelPrefix, ''));
-    if (!name) continue;
-    if (!logoNames.includes(name)) logoNames.push(name);
-
-    let node = img;
-    let foundHref = '';
-
-    for (let depth = 0; depth < 7 && node; depth++) {
-      if (node.matches && node.matches('a[href]')) {
-        foundHref = node.href;
-        break;
-      }
-      node = node.parentElement;
-    }
-
-    const id = channelId(foundHref);
-
-    if (id) {
-      idToName.set(id, name);
-      logoLinks.push({
-        id,
-        name,
-        href: foundHref
-      });
-    }
-  }
-
-  // Bilinen kanal kimliklerini yedek eşleştirme olarak kullan.
-  for (const [id, name] of Object.entries(knownChannels)) {
-    if (!idToName.has(id)) {
-      idToName.set(id, name);
-    }
-  }
-
+  const anchors = [...document.querySelectorAll('a')];
   const groups = new Map();
-  const unresolved = [];
-  const anchors = [...document.querySelectorAll('a[href]')];
 
+  // Program bağlantılarını kanal bazında grupla.
   for (const a of anchors) {
     const text = norm(a.innerText || a.textContent);
 
-    if (!timeRe.test(text)) continue;
+    if (!a.href || !timeRe.test(text)) continue;
 
-    const id = channelId(a.href);
-    let name = id ? idToName.get(id) : '';
+    if (!groups.has(a.href)) {
+      groups.set(a.href, []);
+    }
 
-    // Kimlik eşleşmesi yoksa yakın kapsayıcıda tek logo ara.
-    // Logo sırasına göre tahmini eşleştirme yapma.
-    if (!name) {
-      let node = a;
+    groups.get(a.href).push({
+      text,
+      element: a
+    });
+  }
 
-      for (let depth = 0; depth < 10 && node; depth++) {
-        node = node.parentElement;
-        if (!node) break;
+  // Sayfadaki kanal logolarından kanal adlarını al.
+  const logoNames = [];
 
-        const names = [...new Set(
-          [...node.querySelectorAll('img[alt]')]
-            .map(img => norm(img.getAttribute('alt')))
-            .filter(alt => channelPrefix.test(alt))
-            .map(alt => norm(alt.replace(channelPrefix, '')))
-            .filter(Boolean)
-        )];
+  for (const img of document.querySelectorAll('img[alt]')) {
+    const alt = norm(img.getAttribute('alt'));
 
-        if (names.length === 1) {
-          name = names[0];
-          break;
-        }
+    if (!/^Kanal\s*:/i.test(alt)) continue;
 
-        if (names.length > 1) break;
+    const name = alt.replace(/^Kanal\s*:\s*/i, '').trim();
+
+    if (name && !logoNames.includes(name)) {
+      logoNames.push(name);
+    }
+  }
+
+  const usableNames = logoNames.filter(
+    name => ![
+      'BENİM KANALIM',
+      'FAVORİ KANALLARIM'
+    ].includes(name.toLocaleUpperCase('tr-TR'))
+  );
+
+  const out = [];
+  const entries = [...groups.entries()];
+
+  for (let i = 0; i < entries.length; i++) {
+    const [href, items] = entries[i];
+
+    const decodedHref = (() => {
+      try { return decodeURIComponent(href); }
+      catch (_) { return href; }
+    })();
+    const codeMatch = decodedHref.match(/\b(ch\d{6,})\b/i);
+    const channelCode = codeMatch ? codeMatch[1].toLowerCase() : '';
+
+    const first = items[0].element;
+    let name = channelCode && channelOverrides
+      ? (channelOverrides[channelCode] || '')
+      : '';
+    let node = first;
+
+    // Önce program kartının kendi kapsayıcısından
+    // kanal adını bulmaya çalış.
+    for (
+      let depth = 0;
+      !name && depth < 14 && node;
+      depth++, node = node.parentElement
+    ) {
+      const imgs = [...node.querySelectorAll('img[alt]')]
+        .map(img => norm(img.getAttribute('alt')))
+        .filter(alt => /^Kanal\s*:/i.test(alt));
+
+      const timeLinks = [...node.querySelectorAll('a')].filter(a =>
+        timeRe.test(norm(a.innerText || a.textContent))
+      );
+
+      const hrefs = new Set(timeLinks.map(a => a.href));
+
+      if (
+        imgs.length === 1 &&
+        hrefs.size === 1 &&
+        hrefs.has(href)
+      ) {
+        name = imgs[0]
+          .replace(/^Kanal\s*:\s*/i, '')
+          .trim();
+
+        break;
       }
     }
 
-    if (!name) {
-      unresolved.push({
-        text,
-        href: a.href,
-        channelId: id
+    // Kapsayıcıdan bulunamazsa logo sırasını kullan.
+    if (!name && i < usableNames.length) {
+      name = usableNames[i];
+    }
+
+    const texts = items.map(item => item.text);
+
+    if (name && texts.length) {
+      out.push({
+        name,
+        href,
+        code: channelCode,
+        items: texts
       });
-      continue;
     }
-
-    if (!groups.has(name)) {
-      groups.set(name, []);
-    }
-
-    groups.get(name).push(text);
   }
 
-  const rows = [...groups.entries()].map(([name, items]) => ({
-    name,
-    items
-  }));
-
   return {
-    rows,
+    rows: out,
     logoNames,
-    groupCount: rows.length,
-
+    groupCount: groups.size,
     diagnostics: {
       logoCount: logoNames.length,
-      logoLinkCount: logoLinks.length,
-
-      programLinkCount: anchors.filter(a =>
-        timeRe.test(norm(a.innerText || a.textContent))
-      ).length,
-
-      mappedGroupCount: rows.length,
-
-      mappedProgramCount: rows.reduce(
-        (sum, row) => sum + row.items.length,
-        0
-      ),
-
-      unresolvedProgramCount: unresolved.length,
-
-      sampleLogos: logoNames.slice(0, 12),
-      sampleLogoLinks: logoLinks.slice(0, 12),
-
-      sampleMapped: rows.slice(0, 12).map(row => ({
-        channel: row.name,
-        programCount: row.items.length,
-        firstProgram: row.items[0]
-      })),
-
-      sampleUnresolved: unresolved.slice(0, 12)
+      usableLogoCount: usableNames.length,
+      programGroupCount: groups.size,
+      mappedGroupCount: out.length,
+      sampleLogos: logoNames.slice(0, 8),
+      sampleGroups: entries.slice(0, 5).map(
+        ([href, items]) => ({
+          href,
+          firstProgram: items[0].text
+        })
+      )
     }
   };
 }"""
@@ -243,7 +237,6 @@ def slugify(value):
         value = value.replace(old, new).replace(old.upper(), new)
 
     value = unicodedata.normalize("NFKD", value)
-
     value = "".join(
         c for c in value if not unicodedata.combining(c)
     ).lower()
@@ -333,7 +326,7 @@ def select_date(page, label):
     page.wait_for_timeout(DATE_WAIT_MS)
 
 
-def assign_times(items, selected_day):
+def assign_times(items, selected_day, channel_name=""):
     parsed = [
         p for p in (
             parse_program_line(x)
@@ -361,9 +354,14 @@ def assign_times(items, selected_day):
         for i in range(1, len(parsed))
     )
 
+    channel_key = clean_text(channel_name).casefold()
     current_day = (
         selected_day - timedelta(days=1)
-        if first_minutes >= 18 * 60 and has_rollover
+        if (
+            channel_key not in {"bbc earth", "id"}
+            and first_minutes >= 18 * 60
+            and has_rollover
+        )
         else selected_day
     )
 
@@ -464,7 +462,7 @@ def collect_all(page, today):
 
             select_date(page, label)
 
-            extracted = page.evaluate(EXTRACT_JS)
+            extracted = page.evaluate(EXTRACT_JS, CHANNEL_NAME_OVERRIDES)
             rows = extracted.get("rows", [])
 
             if not rows:
@@ -472,26 +470,11 @@ def collect_all(page, today):
                     f"  UYARI: {category_name} / {label}: "
                     f"program grubu bulunamadı."
                 )
-
                 print(
                     "  Tanılama:",
                     extracted.get("diagnostics", {})
                 )
-
                 continue
-
-            diagnostics = extracted.get("diagnostics", {})
-
-            if diagnostics.get("unresolvedProgramCount", 0):
-                print(
-                    f"  EŞLEŞMEYEN PROGRAM: "
-                    f"{diagnostics['unresolvedProgramCount']} adet"
-                )
-
-                print(
-                    "  Eşleşme tanılaması:",
-                    diagnostics
-                )
 
             day_program_count = 0
 
@@ -508,7 +491,8 @@ def collect_all(page, today):
 
                 programs = assign_times(
                     row.get("items", []),
-                    selected_day
+                    selected_day,
+                    channel_name
                 )
 
                 if not programs:
@@ -540,7 +524,7 @@ def collect_all(page, today):
                         day_program_count += 1
 
             print(
-                f"    {len(rows)} kanal grubu / "
+                f"    {len(rows)} kart / "
                 f"{len(category_channels)} kategori kanalı / "
                 f"{day_program_count} yeni program"
             )
