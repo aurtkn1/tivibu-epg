@@ -1,3 +1,4 @@
+
 name: Tivibu EPG Güncelle
 
 on:
@@ -46,11 +47,76 @@ jobs:
       - name: Tivibu EPG oluştur
         run: python tivibu_epg.py
 
+      - name: XML ve program kayıtlarını doğrula
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          from collections import Counter
+
+          dosya = "epg.xml"
+
+          print("=" * 55)
+          print("EPG XML DOĞRULAMA")
+          print("=" * 55)
+
+          tree = ET.parse(dosya)
+          root = tree.getroot()
+
+          channels = root.findall("channel")
+          programs = root.findall("programme")
+
+          print(f"Kanal sayısı: {len(channels)}")
+          print(f"Program sayısı: {len(programs)}")
+
+          if not channels:
+              raise SystemExit("HATA: XML içinde kanal bulunamadı!")
+
+          if not programs:
+              raise SystemExit("HATA: XML içinde program bulunamadı!")
+
+          channel_ids = {
+              channel.get("id")
+              for channel in channels
+          }
+
+          counts = Counter(
+              program.get("channel")
+              for program in programs
+          )
+
+          orphan_programs = [
+              program.get("channel")
+              for program in programs
+              if program.get("channel") not in channel_ids
+          ]
+
+          if orphan_programs:
+              raise SystemExit(
+                  f"HATA: {len(orphan_programs)} programın kanal ID'si XML'de yok!"
+              )
+
+          targets = {
+              "NATIONAL GEOGRAPHIC": "ch00000000000000001201",
+              "NATIONAL GEOGRAPHIC WILD": "ch00000000000000001211",
+              "BBC EARTH": "ch00000000000000001061",
+          }
+
+          print("\nÖZEL KANAL KONTROLÜ")
+
+          for name, code in targets.items():
+              print(f"{name}: {counts.get(code, 0)} program")
+
+          print("\nXML BAŞARIYLA DOĞRULANDI.")
+          print("=" * 55)
+          PY
+
       - name: EPG dosyasını GitHub'a kaydet
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add epg.xml
+
           if git diff --cached --quiet; then
             echo "EPG dosyasında değişiklik yok."
           else
