@@ -20,7 +20,6 @@ PAGE_TIMEOUT = 60000
 DATE_WAIT_MS = 1100
 MIN_CHANNELS = 30
 
-# Tivibu'nun bütün kategori sayfaları
 CATEGORY_PAGES = [
     ("Tüm Kanallar", "/canli-tv"),
     ("Diğer", "/canli-tv/diger"),
@@ -58,65 +57,116 @@ EXTRACT_JS = r"""() => {
   const norm = s => (s || '').replace(/\s+/g, ' ').trim();
   const channelPrefix = /^Kanal\s*:/i;
 
-  const logoNames = [];
+  const knownChannels = {
+    'ch00000000000000002843': 'TYT TÜRK',
+    'ch00000000000000001981': 'TV4',
+    'ch00000000000000002267': 'SZC TV',
+    'ch00000000000000001308': 'TRT TÜRK',
+    'ch00000000000000001267': 'TRT AVAZ',
+    'ch00000000000000002925': 'TRT GENÇ',
+    'ch00000000000000002773': 'TİVİ 6',
+    'ch00000000000000001070': 'CNN INTERNATIONAL',
+    'ch00000000000000001063': 'BBC NEWS',
+    'ch00000000000000001013': 'AL JAZEERA INTERNATIONAL',
+    'ch00000000000000001101': 'CNBC',
+    'ch00000000000000001309': 'TRT WORLD'
+  };
 
+  const channelId = href => {
+    if (!href) return '';
+    let value = String(href);
+    try { value = decodeURIComponent(value); } catch (e) {}
+    const match = value.match(/ch\d{20,}/i);
+    return match ? match[0].toLowerCase() : '';
+  };
+
+  const logoNames = [];
+  const logoLinks = [];
+  const idToName = new Map();
+
+  // Kanal logolarını ve logoları taşıyan bağlantıları oku.
   for (const img of document.querySelectorAll('img[alt]')) {
     const alt = norm(img.getAttribute('alt'));
-
     if (!channelPrefix.test(alt)) continue;
 
     const name = norm(alt.replace(channelPrefix, ''));
+    if (!name) continue;
+    if (!logoNames.includes(name)) logoNames.push(name);
 
-    if (name && !logoNames.includes(name)) {
-      logoNames.push(name);
+    let node = img;
+    let foundHref = '';
+
+    for (let depth = 0; depth < 7 && node; depth++) {
+      if (node.matches && node.matches('a[href]')) {
+        foundHref = node.href;
+        break;
+      }
+      node = node.parentElement;
+    }
+
+    const id = channelId(foundHref);
+
+    if (id) {
+      idToName.set(id, name);
+      logoLinks.push({
+        id,
+        name,
+        href: foundHref
+      });
     }
   }
 
-  // Program bağlantısını kendi kanal logosuyla eşleştir.
-  // Program bağlantısının URL adresi kanal kimliği olarak kullanılmaz.
+  // Bilinen kanal kimliklerini yedek eşleştirme olarak kullan.
+  for (const [id, name] of Object.entries(knownChannels)) {
+    if (!idToName.has(id)) {
+      idToName.set(id, name);
+    }
+  }
+
   const groups = new Map();
   const unresolved = [];
-
-  const anchors = [...document.querySelectorAll('a')];
+  const anchors = [...document.querySelectorAll('a[href]')];
 
   for (const a of anchors) {
     const text = norm(a.innerText || a.textContent);
 
-    if (!a.href || !timeRe.test(text)) continue;
+    if (!timeRe.test(text)) continue;
 
-    let name = '';
-    let node = a;
+    const id = channelId(a.href);
+    let name = id ? idToName.get(id) : '';
 
-    // Program bağlantısından başlayarak üst kapsayıcıları kontrol et.
-    for (let depth = 0; depth < 14 && node; depth++) {
-      node = node.parentElement;
+    // Kimlik eşleşmesi yoksa yakın kapsayıcıda tek logo ara.
+    // Logo sırasına göre tahmini eşleştirme yapma.
+    if (!name) {
+      let node = a;
 
-      if (!node) break;
+      for (let depth = 0; depth < 10 && node; depth++) {
+        node = node.parentElement;
+        if (!node) break;
 
-      const names = [...new Set(
-        [...node.querySelectorAll('img[alt]')]
-          .map(img => norm(img.getAttribute('alt')))
-          .filter(alt => channelPrefix.test(alt))
-          .map(alt => norm(alt.replace(channelPrefix, '')))
-          .filter(Boolean)
-      )];
+        const names = [...new Set(
+          [...node.querySelectorAll('img[alt]')]
+            .map(img => norm(img.getAttribute('alt')))
+            .filter(alt => channelPrefix.test(alt))
+            .map(alt => norm(alt.replace(channelPrefix, '')))
+            .filter(Boolean)
+        )];
 
-      // Kapsayıcıda tek kanal logosu varsa eşleşme yapılabilir.
-      if (names.length === 1) {
-        name = names[0];
-        break;
+        if (names.length === 1) {
+          name = names[0];
+          break;
+        }
+
+        if (names.length > 1) break;
       }
-
-      // Birden fazla kanal logosu varsa tahmin yürütme.
-      if (names.length > 1) break;
     }
 
     if (!name) {
       unresolved.push({
         text,
-        href: a.href
+        href: a.href,
+        channelId: id
       });
-
       continue;
     }
 
@@ -139,9 +189,10 @@ EXTRACT_JS = r"""() => {
 
     diagnostics: {
       logoCount: logoNames.length,
+      logoLinkCount: logoLinks.length,
 
       programLinkCount: anchors.filter(a =>
-        a.href && timeRe.test(norm(a.innerText || a.textContent))
+        timeRe.test(norm(a.innerText || a.textContent))
       ).length,
 
       mappedGroupCount: rows.length,
@@ -154,14 +205,15 @@ EXTRACT_JS = r"""() => {
       unresolvedProgramCount: unresolved.length,
 
       sampleLogos: logoNames.slice(0, 12),
+      sampleLogoLinks: logoLinks.slice(0, 12),
 
-      sampleMapped: rows.slice(0, 8).map(row => ({
+      sampleMapped: rows.slice(0, 12).map(row => ({
         channel: row.name,
         programCount: row.items.length,
         firstProgram: row.items[0]
       })),
 
-      sampleUnresolved: unresolved.slice(0, 8)
+      sampleUnresolved: unresolved.slice(0, 12)
     }
   };
 }"""
@@ -428,7 +480,6 @@ def collect_all(page, today):
 
                 continue
 
-            # Eşleşmeyen program bağlantılarını ayrıca raporla.
             diagnostics = extracted.get("diagnostics", {})
 
             if diagnostics.get("unresolvedProgramCount", 0):
