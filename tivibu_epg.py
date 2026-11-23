@@ -1,3 +1,4 @@
+
 import re
 import html
 import time
@@ -62,58 +63,38 @@ EXTRACT_JS = r"""() => {
   // Program bağlantılarını kanal bazında grupla.
   for (const a of anchors) {
     const text = norm(a.innerText || a.textContent);
-
     if (!a.href || !timeRe.test(text)) continue;
 
-    if (!groups.has(a.href)) {
-      groups.set(a.href, []);
-    }
-
-    groups.get(a.href).push({
-      text,
-      element: a
-    });
+    if (!groups.has(a.href)) groups.set(a.href, []);
+    groups.get(a.href).push({ text, element: a });
   }
 
   // Sayfadaki kanal logolarından kanal adlarını al.
   const logoNames = [];
-
   for (const img of document.querySelectorAll('img[alt]')) {
     const alt = norm(img.getAttribute('alt'));
-
     if (!/^Kanal\s*:/i.test(alt)) continue;
 
     const name = alt.replace(/^Kanal\s*:\s*/i, '').trim();
-
-    if (name && !logoNames.includes(name)) {
-      logoNames.push(name);
-    }
+    if (name && !logoNames.includes(name)) logoNames.push(name);
   }
 
+  const excluded = ['BENİM KANALIM', 'FAVORİ KANALLARIM'];
   const usableNames = logoNames.filter(
-    name => ![
-      'BENİM KANALIM',
-      'FAVORİ KANALLARIM'
-    ].includes(name.toLocaleUpperCase('tr-TR'))
+    name => !excluded.includes(name.toLocaleUpperCase('tr-TR'))
   );
 
-  const out = [];
   const entries = [...groups.entries()];
+  const matched = [];
+  const unmatched = [];
 
-  for (let i = 0; i < entries.length; i++) {
-    const [href, items] = entries[i];
-
+  // Önce her program grubunu kendi kartındaki kanal logosuyla eşleştir.
+  for (const [href, items] of entries) {
     const first = items[0].element;
     let name = '';
     let node = first;
 
-    // Önce program kartının kendi kapsayıcısından
-    // kanal adını bulmaya çalış.
-    for (
-      let depth = 0;
-      depth < 14 && node;
-      depth++, node = node.parentElement
-    ) {
+    for (let depth = 0; depth < 14 && node; depth++, node = node.parentElement) {
       const imgs = [...node.querySelectorAll('img[alt]')]
         .map(img => norm(img.getAttribute('alt')))
         .filter(alt => /^Kanal\s*:/i.test(alt));
@@ -121,37 +102,46 @@ EXTRACT_JS = r"""() => {
       const timeLinks = [...node.querySelectorAll('a')].filter(a =>
         timeRe.test(norm(a.innerText || a.textContent))
       );
-
       const hrefs = new Set(timeLinks.map(a => a.href));
 
-      if (
-        imgs.length === 1 &&
-        hrefs.size === 1 &&
-        hrefs.has(href)
-      ) {
-        name = imgs[0]
-          .replace(/^Kanal\s*:\s*/i, '')
-          .trim();
-
+      if (imgs.length === 1 && hrefs.size === 1 && hrefs.has(href)) {
+        name = imgs[0].replace(/^Kanal\s*:\s*/i, '').trim();
         break;
       }
     }
 
-    // Kapsayıcıdan bulunamazsa logo sırasını kullan.
-    if (!name && i < usableNames.length) {
-      name = usableNames[i];
-    }
-
-    const texts = items.map(item => item.text);
-
-    if (name && texts.length) {
-      out.push({
-        name,
-        href,
-        items: texts
-      });
-    }
+    const row = { name, href, items: items.map(item => item.text) };
+    if (name) matched.push(row);
+    else unmatched.push(row);
   }
+
+  // Eski kod, grup indeksi ile logo indeksini doğrudan eşliyordu.
+  // Arada karttan eşleşen grup varsa sonraki kanallar kayıyordu.
+  // Sıra yedeğini yalnızca logo ve program grubu sayısı birebir aynıysa
+  // kullan; eşleşmiş adları çıkarıp yalnızca eşleşmeyen gruplara uygula.
+  const canUseOrderFallback = usableNames.length === entries.length;
+  const alreadyMatched = new Set(
+    matched.map(row => row.name.toLocaleUpperCase('tr-TR'))
+  );
+  const remainingNames = usableNames.filter(
+    name => !alreadyMatched.has(name.toLocaleUpperCase('tr-TR'))
+  );
+
+  let fallbackCount = 0;
+  if (canUseOrderFallback && remainingNames.length === unmatched.length) {
+    unmatched.forEach((row, index) => {
+      row.name = remainingNames[index];
+      row.mappingSource = 'logo-order-fallback';
+      fallbackCount++;
+    });
+  }
+
+  const out = matched.map(row => ({ ...row, mappingSource: 'card' }));
+  if (fallbackCount) out.push(...unmatched);
+
+  const mappedNames = new Set(out.map(row => row.name.toLocaleUpperCase('tr-TR')));
+  const unmappedGroups = fallbackCount ? 0 : unmatched.length;
+  const programItemCount = entries.reduce((sum, entry) => sum + entry[1].length, 0);
 
   return {
     rows: out,
@@ -161,14 +151,23 @@ EXTRACT_JS = r"""() => {
       logoCount: logoNames.length,
       usableLogoCount: usableNames.length,
       programGroupCount: groups.size,
+      programItemCount,
       mappedGroupCount: out.length,
-      sampleLogos: logoNames.slice(0, 8),
-      sampleGroups: entries.slice(0, 5).map(
-        ([href, items]) => ({
-          href,
-          firstProgram: items[0].text
-        })
-      )
+      cardMappedCount: matched.length,
+      fallbackGroupCount: fallbackCount,
+      unmappedGroupCount: unmappedGroups,
+      orderFallbackAllowed: canUseOrderFallback,
+      missingLogoNames: usableNames.filter(
+        name => !mappedNames.has(name.toLocaleUpperCase('tr-TR'))
+      ),
+      unmappedGroupDetails: fallbackCount ? [] : unmatched.map(row => ({
+        href: row.href,
+        firstProgram: row.items[0] || ''
+      })),
+      sampleGroups: entries.slice(0, 5).map(([href, items]) => ({
+        href,
+        firstProgram: items[0].text
+      }))
     }
   };
 }"""
@@ -377,6 +376,36 @@ def assign_times(items, selected_day):
     return result
 
 
+def extract_when_stable(page):
+    """Tarih değişiminden sonra program kartlarının yüklenmesini bekle."""
+    last_signature = None
+    stable_checks = 0
+    latest = None
+    deadline = time.monotonic() + 7.0
+
+    while time.monotonic() < deadline:
+        latest = page.evaluate(EXTRACT_JS)
+        diagnostics = latest.get("diagnostics", {})
+        signature = (
+            diagnostics.get("logoCount", 0),
+            diagnostics.get("programGroupCount", 0),
+            diagnostics.get("programItemCount", 0),
+        )
+
+        if signature == last_signature and signature[1] > 0:
+            stable_checks += 1
+        else:
+            stable_checks = 0
+
+        if stable_checks >= 2:
+            return latest
+
+        last_signature = signature
+        page.wait_for_timeout(400)
+
+    return latest or page.evaluate(EXTRACT_JS)
+
+
 def collect_all(page, today):
     all_channels = set()
     all_programs = {}
@@ -418,8 +447,30 @@ def collect_all(page, today):
 
             select_date(page, label)
 
-            extracted = page.evaluate(EXTRACT_JS)
+            extracted = extract_when_stable(page)
             rows = extracted.get("rows", [])
+            diagnostics = extracted.get("diagnostics", {})
+
+            print(
+                f"    Eşleştirme: {diagnostics.get('cardMappedCount', 0)} kart, "
+                f"{diagnostics.get('fallbackGroupCount', 0)} sıra yedeği, "
+                f"{diagnostics.get('unmappedGroupCount', 0)} eşleşmeyen grup"
+            )
+
+            if diagnostics.get("missingLogoNames"):
+                print(
+                    "    Program grubu bulunmayan logolar:",
+                    ", ".join(diagnostics["missingLogoNames"])
+                )
+
+            if diagnostics.get("unmappedGroupDetails"):
+                for item in diagnostics["unmappedGroupDetails"]:
+                    print(
+                        "    EŞLEŞMEYEN GRUP:",
+                        item.get("firstProgram", ""),
+                        "|",
+                        item.get("href", "")
+                    )
 
             if not rows:
                 print(
