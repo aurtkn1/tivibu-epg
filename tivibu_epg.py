@@ -1,3 +1,4 @@
+
 import re
 import html
 import time
@@ -19,9 +20,8 @@ PAGE_TIMEOUT = 60000
 DATE_WAIT_MS = 1100
 MIN_CHANNELS = 30
 
-# Tivibu'nun bütün kategori sayfaları
+# Yalnızca alt kategori sayfaları
 CATEGORY_PAGES = [
-    ("Tüm Kanallar", "/canli-tv"),
     ("Diğer", "/canli-tv/diger"),
     ("Global", "/canli-tv/global"),
     ("Ulusal", "/canli-tv/ulusal"),
@@ -35,10 +35,8 @@ CATEGORY_PAGES = [
     ("Sinema", "/canli-tv/sinema"),
 ]
 
-# Kanal kodu üzerinden kesin adlandırma. Diğer kanallar için mevcut
-# kart/logo sırası eşleştirmesi aynen korunur.
+# Kanal kodu üzerinden kesin adlandırma.
 CHANNEL_NAME_OVERRIDES = {
-    # Eksik kanallar
     "ch00000000000000002843": "TYT TÜRK",
     "ch00000000000000001981": "TV4",
     "ch00000000000000002267": "SZC TV",
@@ -51,15 +49,11 @@ CHANNEL_NAME_OVERRIDES = {
     "ch00000000000000001013": "AL JAZEERA INTERNATIONAL",
     "ch00000000000000001101": "CNBC",
     "ch00000000000000001309": "TRT WORLD",
-
-    # Eşleşmesi karışan belgesel kanalları
     "ch00000000000000001111": "DISCOVERY CHANNEL",
     "ch00000000000000001201": "NATIONAL GEOGRAPHIC",
     "ch00000000000000001211": "NATIONAL GEOGRAPHIC WILD",
     "ch00000000000000001881": "LOVE NATURE",
     "ch00000000000000001891": "VIASAT HISTORY",
-
-    # Saat kayması kontrolü istenen kanallar
     "ch00000000000000001061": "BBC EARTH",
     "ch00000000000000001171": "ID",
 }
@@ -88,7 +82,6 @@ EXTRACT_JS = r"""(channelOverrides) => {
   const anchors = [...document.querySelectorAll('a')];
   const groups = new Map();
 
-  // Program bağlantılarını kanal bazında grupla.
   for (const a of anchors) {
     const text = norm(a.innerText || a.textContent);
 
@@ -104,7 +97,6 @@ EXTRACT_JS = r"""(channelOverrides) => {
     });
   }
 
-  // Sayfadaki kanal logolarından kanal adlarını al.
   const logoNames = [];
 
   for (const img of document.querySelectorAll('img[alt]')) {
@@ -145,8 +137,6 @@ EXTRACT_JS = r"""(channelOverrides) => {
       : '';
     let node = first;
 
-    // Önce program kartının kendi kapsayıcısından
-    // kanal adını bulmaya çalış.
     for (
       let depth = 0;
       !name && depth < 14 && node;
@@ -175,7 +165,6 @@ EXTRACT_JS = r"""(channelOverrides) => {
       }
     }
 
-    // Kapsayıcıdan bulunamazsa logo sırasını kullan.
     if (!name && i < usableNames.length) {
       name = usableNames[i];
     }
@@ -649,7 +638,7 @@ def main():
     today = datetime.now(ISTANBUL).date()
 
     print("=" * 68)
-    print("TIVIBU 7 GÜNLÜK EPG - TÜM KATEGORİLER")
+    print("TIVIBU 7 GÜNLÜK EPG - ALT KATEGORİLER")
     print(f"Kaynak: {LIVE_TV_URL}")
     print(f"Başlangıç: {today.strftime('%d.%m.%Y')}")
     print(f"Kategori sayısı: {len(CATEGORY_PAGES)}")
