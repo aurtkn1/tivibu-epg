@@ -1,3 +1,4 @@
+
 import re
 import html
 import time
@@ -55,120 +56,112 @@ CATEGORY_RE = re.compile(
 EXTRACT_JS = r"""() => {
   const timeRe = /\d{1,2}:\d{2}\s*(?:→|➜|[-–])\s*\d{1,2}:\d{2}/;
   const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+  const channelPrefix = /^Kanal\s*:/i;
 
-  const anchors = [...document.querySelectorAll('a')];
-  const groups = new Map();
-
-  // Program bağlantılarını kanal bazında grupla.
-  for (const a of anchors) {
-    const text = norm(a.innerText || a.textContent);
-
-    if (!a.href || !timeRe.test(text)) continue;
-
-    if (!groups.has(a.href)) {
-      groups.set(a.href, []);
-    }
-
-    groups.get(a.href).push({
-      text,
-      element: a
-    });
-  }
-
-  // Sayfadaki kanal logolarından kanal adlarını al.
   const logoNames = [];
 
   for (const img of document.querySelectorAll('img[alt]')) {
     const alt = norm(img.getAttribute('alt'));
 
-    if (!/^Kanal\s*:/i.test(alt)) continue;
+    if (!channelPrefix.test(alt)) continue;
 
-    const name = alt.replace(/^Kanal\s*:\s*/i, '').trim();
+    const name = norm(alt.replace(channelPrefix, ''));
 
     if (name && !logoNames.includes(name)) {
       logoNames.push(name);
     }
   }
 
-  const usableNames = logoNames.filter(
-    name => ![
-      'BENİM KANALIM',
-      'FAVORİ KANALLARIM'
-    ].includes(name.toLocaleUpperCase('tr-TR'))
-  );
+  // Program bağlantısını kendi kanal logosuyla eşleştir.
+  // Program bağlantısının URL adresi kanal kimliği olarak kullanılmaz.
+  const groups = new Map();
+  const unresolved = [];
 
-  const out = [];
-  const entries = [...groups.entries()];
+  const anchors = [...document.querySelectorAll('a')];
 
-  for (let i = 0; i < entries.length; i++) {
-    const [href, items] = entries[i];
+  for (const a of anchors) {
+    const text = norm(a.innerText || a.textContent);
 
-    const first = items[0].element;
+    if (!a.href || !timeRe.test(text)) continue;
+
     let name = '';
-    let node = first;
+    let node = a;
 
-    // Önce program kartının kendi kapsayıcısından
-    // kanal adını bulmaya çalış.
-    for (
-      let depth = 0;
-      depth < 14 && node;
-      depth++, node = node.parentElement
-    ) {
-      const imgs = [...node.querySelectorAll('img[alt]')]
-        .map(img => norm(img.getAttribute('alt')))
-        .filter(alt => /^Kanal\s*:/i.test(alt));
+    // Program bağlantısından başlayarak üst kapsayıcıları kontrol et.
+    for (let depth = 0; depth < 14 && node; depth++) {
+      node = node.parentElement;
 
-      const timeLinks = [...node.querySelectorAll('a')].filter(a =>
-        timeRe.test(norm(a.innerText || a.textContent))
-      );
+      if (!node) break;
 
-      const hrefs = new Set(timeLinks.map(a => a.href));
+      const names = [...new Set(
+        [...node.querySelectorAll('img[alt]')]
+          .map(img => norm(img.getAttribute('alt')))
+          .filter(alt => channelPrefix.test(alt))
+          .map(alt => norm(alt.replace(channelPrefix, '')))
+          .filter(Boolean)
+      )];
 
-      if (
-        imgs.length === 1 &&
-        hrefs.size === 1 &&
-        hrefs.has(href)
-      ) {
-        name = imgs[0]
-          .replace(/^Kanal\s*:\s*/i, '')
-          .trim();
-
+      // Kapsayıcıda tek kanal logosu varsa eşleşme yapılabilir.
+      if (names.length === 1) {
+        name = names[0];
         break;
       }
+
+      // Birden fazla kanal logosu varsa tahmin yürütme.
+      if (names.length > 1) break;
     }
 
-    // Kapsayıcıdan bulunamazsa logo sırasını kullan.
-    if (!name && i < usableNames.length) {
-      name = usableNames[i];
-    }
-
-    const texts = items.map(item => item.text);
-
-    if (name && texts.length) {
-      out.push({
-        name,
-        href,
-        items: texts
+    if (!name) {
+      unresolved.push({
+        text,
+        href: a.href
       });
+
+      continue;
     }
+
+    if (!groups.has(name)) {
+      groups.set(name, []);
+    }
+
+    groups.get(name).push(text);
   }
 
+  const rows = [...groups.entries()].map(([name, items]) => ({
+    name,
+    items
+  }));
+
   return {
-    rows: out,
+    rows,
     logoNames,
-    groupCount: groups.size,
+    groupCount: rows.length,
+
     diagnostics: {
       logoCount: logoNames.length,
-      usableLogoCount: usableNames.length,
-      programGroupCount: groups.size,
-      mappedGroupCount: out.length,
-      sampleLogos: logoNames.slice(0, 8),
-      sampleGroups: entries.slice(0, 5).map(
-        ([href, items]) => ({
-          href,
-          firstProgram: items[0].text
-        })
-      )
+
+      programLinkCount: anchors.filter(a =>
+        a.href && timeRe.test(norm(a.innerText || a.textContent))
+      ).length,
+
+      mappedGroupCount: rows.length,
+
+      mappedProgramCount: rows.reduce(
+        (sum, row) => sum + row.items.length,
+        0
+      ),
+
+      unresolvedProgramCount: unresolved.length,
+
+      sampleLogos: logoNames.slice(0, 12),
+
+      sampleMapped: rows.slice(0, 8).map(row => ({
+        channel: row.name,
+        programCount: row.items.length,
+        firstProgram: row.items[0]
+      })),
+
+      sampleUnresolved: unresolved.slice(0, 8)
     }
   };
 }"""
@@ -198,6 +191,7 @@ def slugify(value):
         value = value.replace(old, new).replace(old.upper(), new)
 
     value = unicodedata.normalize("NFKD", value)
+
     value = "".join(
         c for c in value if not unicodedata.combining(c)
     ).lower()
@@ -426,11 +420,27 @@ def collect_all(page, today):
                     f"  UYARI: {category_name} / {label}: "
                     f"program grubu bulunamadı."
                 )
+
                 print(
                     "  Tanılama:",
                     extracted.get("diagnostics", {})
                 )
+
                 continue
+
+            # Eşleşmeyen program bağlantılarını ayrıca raporla.
+            diagnostics = extracted.get("diagnostics", {})
+
+            if diagnostics.get("unresolvedProgramCount", 0):
+                print(
+                    f"  EŞLEŞMEYEN PROGRAM: "
+                    f"{diagnostics['unresolvedProgramCount']} adet"
+                )
+
+                print(
+                    "  Eşleşme tanılaması:",
+                    diagnostics
+                )
 
             day_program_count = 0
 
@@ -479,7 +489,7 @@ def collect_all(page, today):
                         day_program_count += 1
 
             print(
-                f"    {len(rows)} kart / "
+                f"    {len(rows)} kanal grubu / "
                 f"{len(category_channels)} kategori kanalı / "
                 f"{day_program_count} yeni program"
             )
