@@ -2,6 +2,7 @@
 import re
 import html
 import time
+import os
 import unicodedata
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -14,6 +15,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 BASE_URL = "https://www.tivibu.com.tr"
 LIVE_TV_URL = f"{BASE_URL}/canli-tv"
 OUTPUT_FILE = "epg.xml"
+TEMP_OUTPUT_FILE = OUTPUT_FILE + ".tmp"
 ISTANBUL = ZoneInfo("Europe/Istanbul")
 DAYS = 7
 PAGE_TIMEOUT = 60000
@@ -352,12 +354,9 @@ def assign_times(items, selected_day, channel_name=""):
     """
     Seçilen Tivibu gününü gerçek takvim tarihine dönüştürür.
 
-    Eski sürüm, ilk yayın 18:00 sonrasında başlıyor ve listede gece
-    yarısı geçişi bulunuyorsa tarihi bir gün geri alıyordu. Bu nedenle
-    bugünün yayınları XML'de dünkü tarihe yazılabiliyordu.
-
-    Yeni sürümde başlangıç tarihi daima selected_day'dir. Saat gece
-    yarısını geçtiğinde yalnızca sonraki programlar ertesi güne alınır.
+    Başlangıç tarihi daima selected_day'dir.
+    Saat gece yarısını geçtiğinde yalnızca sonraki programlar
+    ertesi güne alınır.
     """
     parsed = [
         p for p in (
@@ -619,7 +618,6 @@ def collect_all(page, today):
         )
 
     # Aynı isimli farklı Tivibu ID'leri ayrı kanallar olarak korunur.
-    # Oynatıcıda iki Tarih TV kartı varsa iki ID de XML'de kalır.
     names_to_codes = {}
 
     for code, name in all_channels.items():
@@ -642,6 +640,17 @@ def collect_all(page, today):
 
 
 def build_xml(channels, programs):
+    """
+    XML dosyasını güvenli şekilde oluşturur.
+
+    ElementTree metinlerdeki &, < ve > karakterlerini otomatik
+    olarak XML kurallarına göre kaçırır. Örneğin:
+    BLIPPI & FRIENDS -> BLIPPI &amp; FRIENDS
+
+    Önce geçici dosya oluşturulur. Dosya tekrar XML olarak okunup
+    doğrulanmadan mevcut epg.xml dosyasının üzerine yazılmaz.
+    """
+
     for channel_code, channel_name in channels.items():
         if not re.fullmatch(
             r"ch\d{6,}",
@@ -679,7 +688,7 @@ def build_xml(channels, programs):
             {"lang": "tr"}
         )
 
-        display.text = channel_name
+        display.text = clean_text(channel_name)
 
     for item in sorted(
         programs,
@@ -709,7 +718,7 @@ def build_xml(channels, programs):
             {"lang": "tr"}
         )
 
-        title.text = item["title"]
+        title.text = clean_text(item["title"])
 
     tree = ET.ElementTree(root)
 
@@ -718,11 +727,78 @@ def build_xml(channels, programs):
         space="  "
     )
 
-    tree.write(
-        OUTPUT_FILE,
-        encoding="utf-8",
-        xml_declaration=True
-    )
+    # Önce geçici dosyaya yaz.
+    try:
+        tree.write(
+            TEMP_OUTPUT_FILE,
+            encoding="utf-8",
+            xml_declaration=True
+        )
+
+        # Yazılan dosyayı yeniden XML olarak oku.
+        check_tree = ET.parse(
+            TEMP_OUTPUT_FILE
+        )
+
+        check_root = check_tree.getroot()
+
+        if check_root.tag != "tv":
+            raise RuntimeError(
+                "XML doğrulama hatası: Ana etiket <tv> değil."
+            )
+
+        xml_channels = check_root.findall("channel")
+        xml_programs = check_root.findall("programme")
+
+        if len(xml_channels) != len(channels):
+            raise RuntimeError(
+                "XML doğrulama hatası: Kanal sayısı uyuşmuyor. "
+                f"Beklenen: {len(channels)}, "
+                f"XML: {len(xml_channels)}"
+            )
+
+        if len(xml_programs) != len(programs):
+            raise RuntimeError(
+                "XML doğrulama hatası: Program sayısı uyuşmuyor. "
+                f"Beklenen: {len(programs)}, "
+                f"XML: {len(xml_programs)}"
+            )
+
+        valid_channel_ids = {
+            channel.get("id")
+            for channel in xml_channels
+        }
+
+        # Her programın kanal ID'si XML'de tanımlı olmalı.
+        invalid_references = [
+            programme.get("channel")
+            for programme in xml_programs
+            if programme.get("channel") not in valid_channel_ids
+        ]
+
+        if invalid_references:
+            raise RuntimeError(
+                "XML doğrulama hatası: Tanımsız kanal ID'sine "
+                f"bağlı programlar var: {invalid_references[:10]}"
+            )
+
+        # XML tamamen doğrulandı. Şimdi gerçek dosyanın üzerine yaz.
+        os.replace(
+            TEMP_OUTPUT_FILE,
+            OUTPUT_FILE
+        )
+
+        print("\nXML DOĞRULAMA BAŞARILI")
+        print(f"Doğrulanan kanal: {len(xml_channels)}")
+        print(f"Doğrulanan program: {len(xml_programs)}")
+        print("XML sözdizimi: HATASIZ")
+        print("Program-kanal bağlantıları: GEÇERLİ")
+
+    except Exception:
+        if os.path.exists(TEMP_OUTPUT_FILE):
+            os.remove(TEMP_OUTPUT_FILE)
+
+        raise
 
 
 def validate_data(channels, programs, today):
@@ -790,7 +866,7 @@ def main():
     today = datetime.now(ISTANBUL).date()
 
     print("=" * 68)
-    print("TIVIBU 7 GÜNLÜK EPG - TARİH DÜZELTMELİ SÜRÜM")
+    print("TIVIBU 7 GÜNLÜK EPG - XML DOĞRULAMALI SÜRÜM")
     print(f"Kaynak: {LIVE_TV_URL}")
     print(f"Başlangıç: {today.strftime('%d.%m.%Y')}")
     print(f"Kategori sayısı: {len(CATEGORY_PAGES)}")
@@ -818,12 +894,13 @@ def main():
             PAGE_TIMEOUT
         )
 
-        channels, programs = collect_all(
-            page,
-            today
-        )
-
-        browser.close()
+        try:
+            channels, programs = collect_all(
+                page,
+                today
+            )
+        finally:
+            browser.close()
 
     validate_data(
         channels,
