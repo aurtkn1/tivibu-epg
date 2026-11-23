@@ -20,7 +20,6 @@ PAGE_TIMEOUT = 60000
 DATE_WAIT_MS = 1100
 MIN_CHANNELS = 30
 
-# Tivibu'nun bütün kategori sayfaları
 CATEGORY_PAGES = [
     ("Diğer", "/canli-tv/diger"),
     ("Global", "/canli-tv/global"),
@@ -35,9 +34,7 @@ CATEGORY_PAGES = [
     ("Sinema", "/canli-tv/sinema"),
 ]
 
-# Kanal kodu üzerinden kesin adlandırma.
 CHANNEL_NAME_OVERRIDES = {
-    # Eksik kanallar
     "ch00000000000000002843": "TYT TÜRK",
     "ch00000000000000001981": "TV4",
     "ch00000000000000002267": "SZC TV",
@@ -51,14 +48,15 @@ CHANNEL_NAME_OVERRIDES = {
     "ch00000000000000001101": "CNBC",
     "ch00000000000000001309": "TRT WORLD",
 
-    # Eşleşmesi karışan belgesel kanalları
     "ch00000000000000001111": "DISCOVERY CHANNEL",
     "ch00000000000000001201": "NATIONAL GEOGRAPHIC",
     "ch00000000000000001211": "NATIONAL GEOGRAPHIC WILD",
     "ch00000000000000001881": "LOVE NATURE",
     "ch00000000000000001891": "VIASAT HISTORY",
 
-    # Saat kayması kontrolü istenen kanallar
+    # AS TV: Tivibu yayın bağlantısındaki programid/contentid ile doğrulandı
+    "ch00000000000000002721": "AS TV",
+
     "ch00000000000000001061": "BBC EARTH",
     "ch00000000000000001171": "ID",
 }
@@ -138,11 +136,9 @@ EXTRACT_JS = r"""(channelOverrides) => {
     const channelCode = codeMatch ? codeMatch[1].toLowerCase() : '';
 
     const first = items[0].element;
-
     let name = channelCode && channelOverrides
       ? (channelOverrides[channelCode] || '')
       : '';
-
     let node = first;
 
     for (
@@ -352,7 +348,6 @@ def assign_times(items, selected_day, channel_name=""):
     )
 
     channel_key = clean_text(channel_name).casefold()
-
     current_day = (
         selected_day - timedelta(days=1)
         if (
@@ -420,8 +415,9 @@ def assign_times(items, selected_day, channel_name=""):
 
 
 def collect_all(page, today):
-    all_channels = set()
-    all_channel_codes = {}
+    # Kanal adı değil, Tivibu kanal kodu birincil anahtardır.
+    # Aynı görünen ada sahip farklı kodlar ayrı kanallar olarak korunur.
+    all_channels = {}
     all_programs = {}
 
     window_start = datetime(
@@ -461,11 +457,7 @@ def collect_all(page, today):
 
             select_date(page, label)
 
-            extracted = page.evaluate(
-                EXTRACT_JS,
-                CHANNEL_NAME_OVERRIDES
-            )
-
+            extracted = page.evaluate(EXTRACT_JS, CHANNEL_NAME_OVERRIDES)
             rows = extracted.get("rows", [])
 
             if not rows:
@@ -485,7 +477,6 @@ def collect_all(page, today):
                 channel_name = clean_text(
                     row.get("name")
                 )
-
                 channel_code = clean_text(
                     row.get("code")
                 ).lower()
@@ -496,7 +487,6 @@ def collect_all(page, today):
                 ):
                     continue
 
-                # Gerçek Tivibu kanal kodu zorunlu.
                 if not re.fullmatch(r"ch\d{6,}", channel_code):
                     print(
                         f"  UYARI: {channel_name} için geçerli Tivibu kanal kodu "
@@ -504,13 +494,11 @@ def collect_all(page, today):
                     )
                     continue
 
-                previous_code = all_channel_codes.get(channel_name)
-
-                if previous_code and previous_code != channel_code:
-                    raise RuntimeError(
-                        f"Kanal adı/kodu çakışması: {channel_name} için "
-                        f"hem {previous_code} hem {channel_code} bulundu."
-                    )
+                # Sabit eşleştirme varsa her zaman onu kullan.
+                channel_name = CHANNEL_NAME_OVERRIDES.get(
+                    channel_code,
+                    channel_name
+                )
 
                 programs = assign_times(
                     row.get("items", []),
@@ -521,9 +509,26 @@ def collect_all(page, today):
                 if not programs:
                     continue
 
-                category_channels.add(channel_name)
-                all_channels.add(channel_name)
-                all_channel_codes[channel_name] = channel_code
+                # Aynı ID farklı günlerde farklı adla gelirse isim sabit tutulur.
+                # Farklı ID'lerin aynı adı taşıması ise hata değildir.
+                previous_name = all_channels.get(channel_code)
+
+                if previous_name and previous_name != channel_name:
+                    override_name = CHANNEL_NAME_OVERRIDES.get(channel_code)
+
+                    if override_name:
+                        channel_name = override_name
+                    else:
+                        print(
+                            f"  UYARI: {channel_code} adı değişti: "
+                            f"{previous_name!r} / {channel_name!r}; "
+                            f"ilk ad korunuyor."
+                        )
+                        channel_name = previous_name
+                else:
+                    all_channels[channel_code] = channel_name
+
+                category_channels.add(channel_code)
 
                 for program in programs:
                     if (
@@ -533,7 +538,7 @@ def collect_all(page, today):
                         continue
 
                     key = (
-                        channel_name.casefold(),
+                        channel_code,
                         program["title"].casefold(),
                         program["start"],
                         program["stop"],
@@ -541,6 +546,7 @@ def collect_all(page, today):
 
                     if key not in all_programs:
                         all_programs[key] = {
+                            "channel_code": channel_code,
                             "channel_name": channel_name,
                             **program,
                         }
@@ -558,40 +564,31 @@ def collect_all(page, today):
             f"{len(category_channels)} kanal bulundu."
         )
 
-    return (
-        sorted(all_channels, key=str.casefold),
-        all_channel_codes,
-        list(all_programs.values())
-    )
+    # Aynı görünen ada sahip birden fazla Tivibu ID varsa bilgi ver, durma.
+    names_to_codes = {}
+
+    for code, name in all_channels.items():
+        names_to_codes.setdefault(name.casefold(), []).append(code)
+
+    for name_key, codes in names_to_codes.items():
+        if len(codes) > 1:
+            display_name = all_channels[codes[0]]
+
+            print(
+                f"UYARI: {display_name} adı birden fazla Tivibu ID ile bulundu: "
+                f"{', '.join(sorted(codes))}. Kodlar ayrı ayrı korunacak."
+            )
+
+    return all_channels, list(all_programs.values())
 
 
-def build_xml(channel_names, channel_codes, programs):
-    channel_ids = {}
-
-    for name in sorted(channel_names, key=str.casefold):
-        channel_code = clean_text(
-            channel_codes.get(name)
-        ).lower()
-
-        if not re.fullmatch(r"ch\d{6,}", channel_code):
+def build_xml(channels, programs):
+    for channel_code, channel_name in channels.items():
+        if not re.fullmatch(r"ch\d{6,}", clean_text(channel_code).lower()):
             raise RuntimeError(
-                f"{name} kanalı için geçerli Tivibu ID bulunamadı: "
+                f"{channel_name} kanalı için geçerli Tivibu ID bulunamadı: "
                 f"{channel_code!r}. XML oluşturulmadı."
             )
-
-        if channel_code in channel_ids.values():
-            other_name = next(
-                existing_name
-                for existing_name, existing_code in channel_ids.items()
-                if existing_code == channel_code
-            )
-
-            raise RuntimeError(
-                f"Aynı Tivibu ID iki farklı kanala atanmış: "
-                f"{other_name} / {name} / {channel_code}. XML oluşturulmadı."
-            )
-
-        channel_ids[name] = channel_code
 
     root = ET.Element(
         "tv",
@@ -601,11 +598,14 @@ def build_xml(channel_names, channel_codes, programs):
         }
     )
 
-    for name in sorted(channel_names, key=str.casefold):
+    for channel_code, channel_name in sorted(
+        channels.items(),
+        key=lambda item: (item[1].casefold(), item[0])
+    ):
         channel = ET.SubElement(
             root,
             "channel",
-            {"id": channel_ids[name]}
+            {"id": channel_code}
         )
 
         display = ET.SubElement(
@@ -614,13 +614,13 @@ def build_xml(channel_names, channel_codes, programs):
             {"lang": "tr"}
         )
 
-        display.text = name
+        display.text = channel_name
 
     for item in sorted(
         programs,
         key=lambda x: (
             x["start"],
-            x["channel_name"].casefold(),
+            x["channel_code"],
             x["stop"]
         )
     ):
@@ -628,7 +628,7 @@ def build_xml(channel_names, channel_codes, programs):
             root,
             "programme",
             {
-                "channel": channel_ids[item["channel_name"]],
+                "channel": item["channel_code"],
                 "start": item["start"].strftime(
                     "%Y%m%d%H%M%S %z"
                 ),
@@ -656,13 +656,10 @@ def build_xml(channel_names, channel_codes, programs):
     )
 
 
-def validate_data(channel_names, channel_codes, programs):
+def validate_data(channels, programs):
     missing_codes = [
-        name for name in channel_names
-        if not re.fullmatch(
-            r"ch\d{6,}",
-            clean_text(channel_codes.get(name)).lower()
-        )
+        code for code in channels
+        if not re.fullmatch(r"ch\d{6,}", clean_text(code).lower())
     ]
 
     if missing_codes:
@@ -673,9 +670,9 @@ def validate_data(channel_names, channel_codes, programs):
             f"{sample}. Mevcut XML korunuyor."
         )
 
-    if len(channel_names) < MIN_CHANNELS:
+    if len(channels) < MIN_CHANNELS:
         raise RuntimeError(
-            f"Yalnızca {len(channel_names)} kanal bulundu. "
+            f"Yalnızca {len(channels)} kanal bulundu. "
             f"En az {MIN_CHANNELS} kanal bekleniyordu. "
             "Mevcut XML korunuyor."
         )
@@ -728,22 +725,17 @@ def main():
 
         page.set_default_timeout(PAGE_TIMEOUT)
 
-        channel_names, channel_codes, programs = collect_all(
+        channels, programs = collect_all(
             page,
             today
         )
 
         browser.close()
 
-    validate_data(
-        channel_names,
-        channel_codes,
-        programs
-    )
+    validate_data(channels, programs)
 
     build_xml(
-        channel_names,
-        channel_codes,
+        channels,
         programs
     )
 
@@ -754,7 +746,7 @@ def main():
 
     print("\n" + "=" * 68)
     print("7 GÜNLÜK EPG OLUŞTURULDU")
-    print(f"Toplam kanal: {len(channel_names)}")
+    print(f"Toplam kanal: {len(channels)}")
     print(f"Toplam program: {len(programs)}")
     print(f"Program tarihi sayısı: {len(days)}")
     print(f"İlk tarih: {days[0]}")
