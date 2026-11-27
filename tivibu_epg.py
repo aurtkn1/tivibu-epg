@@ -1,4 +1,3 @@
-
 import re
 import html
 import time
@@ -20,8 +19,9 @@ PAGE_TIMEOUT = 60000
 DATE_WAIT_MS = 1100
 MIN_CHANNELS = 30
 
-# Yalnızca alt kategori sayfaları
+# Tivibu'nun bütün kategori sayfaları
 CATEGORY_PAGES = [
+    ("Tüm Kanallar", "/canli-tv"),
     ("Diğer", "/canli-tv/diger"),
     ("Global", "/canli-tv/global"),
     ("Ulusal", "/canli-tv/ulusal"),
@@ -34,29 +34,6 @@ CATEGORY_PAGES = [
     ("Çocuk", "/canli-tv/cocuk"),
     ("Sinema", "/canli-tv/sinema"),
 ]
-
-# Kanal kodu üzerinden kesin adlandırma.
-CHANNEL_NAME_OVERRIDES = {
-    "ch00000000000000002843": "TYT TÜRK",
-    "ch00000000000000001981": "TV4",
-    "ch00000000000000002267": "SZC TV",
-    "ch00000000000000001308": "TRT TÜRK",
-    "ch00000000000000001267": "TRT AVAZ",
-    "ch00000000000000002925": "TRT GENÇ",
-    "ch00000000000000002773": "TİVİ 6",
-    "ch00000000000000001070": "CNN INTERNATIONAL",
-    "ch00000000000000001063": "BBC NEWS",
-    "ch00000000000000001013": "AL JAZEERA INTERNATIONAL",
-    "ch00000000000000001101": "CNBC",
-    "ch00000000000000001309": "TRT WORLD",
-    "ch00000000000000001111": "DISCOVERY CHANNEL",
-    "ch00000000000000001201": "NATIONAL GEOGRAPHIC",
-    "ch00000000000000001211": "NATIONAL GEOGRAPHIC WILD",
-    "ch00000000000000001881": "LOVE NATURE",
-    "ch00000000000000001891": "VIASAT HISTORY",
-    "ch00000000000000001061": "BBC EARTH",
-    "ch00000000000000001171": "ID",
-}
 
 BAD_CHANNELS = {
     "BENİM KANALIM",
@@ -75,13 +52,14 @@ CATEGORY_RE = re.compile(
 )
 
 
-EXTRACT_JS = r"""(channelOverrides) => {
+EXTRACT_JS = r"""() => {
   const timeRe = /\d{1,2}:\d{2}\s*(?:→|➜|[-–])\s*\d{1,2}:\d{2}/;
   const norm = s => (s || '').replace(/\s+/g, ' ').trim();
 
   const anchors = [...document.querySelectorAll('a')];
   const groups = new Map();
 
+  // Program bağlantılarını kanal bazında grupla.
   for (const a of anchors) {
     const text = norm(a.innerText || a.textContent);
 
@@ -97,6 +75,7 @@ EXTRACT_JS = r"""(channelOverrides) => {
     });
   }
 
+  // Sayfadaki kanal logolarından kanal adlarını al.
   const logoNames = [];
 
   for (const img of document.querySelectorAll('img[alt]')) {
@@ -124,22 +103,15 @@ EXTRACT_JS = r"""(channelOverrides) => {
   for (let i = 0; i < entries.length; i++) {
     const [href, items] = entries[i];
 
-    const decodedHref = (() => {
-      try { return decodeURIComponent(href); }
-      catch (_) { return href; }
-    })();
-    const codeMatch = decodedHref.match(/\b(ch\d{6,})\b/i);
-    const channelCode = codeMatch ? codeMatch[1].toLowerCase() : '';
-
     const first = items[0].element;
-    let name = channelCode && channelOverrides
-      ? (channelOverrides[channelCode] || '')
-      : '';
+    let name = '';
     let node = first;
 
+    // Önce program kartının kendi kapsayıcısından
+    // kanal adını bulmaya çalış.
     for (
       let depth = 0;
-      !name && depth < 14 && node;
+      depth < 14 && node;
       depth++, node = node.parentElement
     ) {
       const imgs = [...node.querySelectorAll('img[alt]')]
@@ -165,6 +137,7 @@ EXTRACT_JS = r"""(channelOverrides) => {
       }
     }
 
+    // Kapsayıcıdan bulunamazsa logo sırasını kullan.
     if (!name && i < usableNames.length) {
       name = usableNames[i];
     }
@@ -175,7 +148,6 @@ EXTRACT_JS = r"""(channelOverrides) => {
       out.push({
         name,
         href,
-        code: channelCode,
         items: texts
       });
     }
@@ -315,7 +287,7 @@ def select_date(page, label):
     page.wait_for_timeout(DATE_WAIT_MS)
 
 
-def assign_times(items, selected_day, channel_name=""):
+def assign_times(items, selected_day):
     parsed = [
         p for p in (
             parse_program_line(x)
@@ -343,14 +315,9 @@ def assign_times(items, selected_day, channel_name=""):
         for i in range(1, len(parsed))
     )
 
-    channel_key = clean_text(channel_name).casefold()
     current_day = (
         selected_day - timedelta(days=1)
-        if (
-            channel_key not in {"bbc earth", "id"}
-            and first_minutes >= 18 * 60
-            and has_rollover
-        )
+        if first_minutes >= 18 * 60 and has_rollover
         else selected_day
     )
 
@@ -451,7 +418,7 @@ def collect_all(page, today):
 
             select_date(page, label)
 
-            extracted = page.evaluate(EXTRACT_JS, CHANNEL_NAME_OVERRIDES)
+            extracted = page.evaluate(EXTRACT_JS)
             rows = extracted.get("rows", [])
 
             if not rows:
@@ -480,8 +447,7 @@ def collect_all(page, today):
 
                 programs = assign_times(
                     row.get("items", []),
-                    selected_day,
-                    channel_name
+                    selected_day
                 )
 
                 if not programs:
@@ -638,7 +604,7 @@ def main():
     today = datetime.now(ISTANBUL).date()
 
     print("=" * 68)
-    print("TIVIBU 7 GÜNLÜK EPG - ALT KATEGORİLER")
+    print("TIVIBU 7 GÜNLÜK EPG - TÜM KATEGORİLER")
     print(f"Kaynak: {LIVE_TV_URL}")
     print(f"Başlangıç: {today.strftime('%d.%m.%Y')}")
     print(f"Kategori sayısı: {len(CATEGORY_PAGES)}")
